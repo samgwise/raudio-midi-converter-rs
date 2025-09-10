@@ -196,6 +196,26 @@
             color: #666;
             font-style: italic;
         }
+        .postprocessing-panel {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 4px solid #17a2b8;
+        }
+        .postprocess-section {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .postprocess-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        .postprocess-section > label {
+            font-weight: bold;
+            color: #495057;
+        }
     </style>
 </head>
 <body>
@@ -370,6 +390,90 @@
             </div>
         </div>
 
+        <!-- Post-Processing Settings -->
+        <div class="form-group">
+            <label>🔧 MIDI Post-Processing Settings:</label>
+            <div class="form-group" style="margin-top: 10px;">
+                <label><input type="checkbox" id="enable-postprocessing" checked onchange="togglePostProcessing()"> Enable Post-Processing</label>
+                <small>Clean up and simplify MIDI output for better playback</small>
+            </div>
+            
+            <div id="postprocessing-options" class="postprocessing-panel">
+                <!-- Pitch Filtering -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-pitch-filter"> Pitch Range Filter</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="min-pitch-note">Min MIDI Note:</label>
+                            <input type="number" id="min-pitch-note" value="21" min="0" max="127">
+                            <small>21 = A0</small>
+                        </div>
+                        <div>
+                            <label for="max-pitch-note">Max MIDI Note:</label>
+                            <input type="number" id="max-pitch-note" value="108" min="0" max="127">
+                            <small>108 = C8</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Velocity Expansion -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-velocity-expand"> Velocity Expansion</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="velocity-expand-threshold">Threshold:</label>
+                            <input type="number" id="velocity-expand-threshold" value="40" min="1" max="127">
+                            <small>Expand notes below this velocity</small>
+                        </div>
+                        <div>
+                            <label for="velocity-expand-factor">Factor:</label>
+                            <input type="number" id="velocity-expand-factor" value="1.5" min="1.0" max="3.0" step="0.1">
+                            <small>Multiplication factor</small>
+                        </div>
+                        <div>
+                            <label for="velocity-expand-max">Max Velocity:</label>
+                            <input type="number" id="velocity-expand-max" value="100" min="64" max="127">
+                            <small>Maximum after expansion</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Note Joining -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-note-joining" checked> Note Joining & Cleanup</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="max-join-gap">Max Join Gap (ticks):</label>
+                            <input type="number" id="max-join-gap" value="24" min="0" max="100">
+                            <small>Join notes within this gap</small>
+                        </div>
+                        <div>
+                            <label for="remove-short-threshold">Remove Short Notes (ticks):</label>
+                            <input type="number" id="remove-short-threshold" value="12" min="0" max="50">
+                            <small>Remove notes shorter than this</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- CC Simplification -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-cc-simplify" checked> CC Event Simplification</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="cc-min-change">Min CC Change:</label>
+                            <input type="number" id="cc-min-change" value="2" min="1" max="10">
+                            <small>Minimum value change to keep</small>
+                        </div>
+                        <div>
+                            <label for="cc-max-rate">Max Events/Second:</label>
+                            <input type="number" id="cc-max-rate" value="20" min="5" max="100">
+                            <small>Maximum CC events per second</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="processing-status" id="processing-status">
             Processing audio... This may take a moment.
         </div>
@@ -386,9 +490,11 @@
             WasmConversionConfig,
             WasmAudioConfig,
             WasmCCMapping,
+            WasmPostProcessingConfig,
             create_default_config,
             create_default_audio_config,
             create_default_cc_mapping,
+            create_default_postprocessing_config,
             get_version,
             init_panic_hook
         } from './pkg/csv_to_midi_wasm.js';
@@ -404,6 +510,9 @@
             
             console.log('CSV to MIDI WASM library loaded, version:', get_version());
             document.getElementById('convert-button').disabled = false;
+            
+            // Initialize post-processing panel visibility
+            togglePostProcessing();
             
             // Initialize audio context
             try {
@@ -449,6 +558,46 @@
         window.updateHopSize = function() {
             console.log('Hop size updated to:', document.getElementById('hop-size').value);
         };
+        
+        window.togglePostProcessing = function() {
+            const enabled = document.getElementById('enable-postprocessing').checked;
+            const optionsPanel = document.getElementById('postprocessing-options');
+            optionsPanel.style.display = enabled ? 'block' : 'none';
+        };
+        
+        function createPostProcessingConfig() {
+            if (!document.getElementById('enable-postprocessing').checked) {
+                return null;
+            }
+            
+            return new WasmPostProcessingConfig(
+                // Pitch filtering
+                document.getElementById('enable-pitch-filter').checked,
+                parseInt(document.getElementById('min-pitch-note').value),
+                parseInt(document.getElementById('max-pitch-note').value),
+                
+                // Velocity expansion
+                document.getElementById('enable-velocity-expand').checked,
+                parseInt(document.getElementById('velocity-expand-threshold').value),
+                parseFloat(document.getElementById('velocity-expand-factor').value),
+                parseInt(document.getElementById('velocity-expand-max').value),
+                
+                // Note joining
+                document.getElementById('enable-note-joining').checked,
+                parseInt(document.getElementById('duration').value), // Use min note duration
+                parseInt(document.getElementById('max-join-gap').value),
+                parseInt(document.getElementById('remove-short-threshold').value),
+                
+                // Duplicate removal (always enabled)
+                true,
+                12, // duplicate time window
+                
+                // CC simplification
+                document.getElementById('enable-cc-simplify').checked,
+                parseInt(document.getElementById('cc-min-change').value),
+                parseFloat(document.getElementById('cc-max-rate').value)
+            );
+        }
 
         window.handleCsvFileUpload = function(event) {
             const file = event.target.files[0];
@@ -565,8 +714,11 @@
                         parseInt(document.getElementById('octave').value)
                     );
                     
-                    // Convert CSV to MIDI
-                    midiArray = convert_csv_to_midi_wasm(csvData, config);
+                    // Get post-processing configuration
+                    const postprocessConfig = createPostProcessingConfig();
+                    
+                    // Convert CSV to MIDI with post-processing
+                    midiArray = convert_csv_to_midi_wasm(csvData, config, postprocessConfig);
                     
                 } else if (currentMode === 'audio') {
                     if (!audioBuffer) {
@@ -622,8 +774,11 @@
                         parseInt(document.getElementById('octave').value)
                     );
                     
-                    // Process audio and convert to MIDI with enhanced analysis
-                    midiArray = process_audio_to_midi(samples, audioConfig, ccMapping, midiConfig);
+                    // Get post-processing configuration
+                    const postprocessConfig = createPostProcessingConfig();
+                    
+                    // Process audio and convert to MIDI with enhanced analysis and post-processing
+                    midiArray = process_audio_to_midi(samples, audioConfig, ccMapping, midiConfig, postprocessConfig);
                     
                     statusDiv.style.display = 'none';
                 }

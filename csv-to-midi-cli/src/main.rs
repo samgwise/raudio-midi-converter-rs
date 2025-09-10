@@ -1,8 +1,8 @@
 use clap::{Arg, Command};
-use csv_to_midi_core::{convert_csv_to_midi, ConversionConfig};
+use csv_to_midi_core::{convert_csv_to_midi_with_postprocess, ConversionConfig, PostProcessingConfig};
 
 #[cfg(feature = "audio")]
-use csv_to_midi_core::{convert_audio_to_midi, AudioAnalysisConfig, CCMappingConfig};
+use csv_to_midi_core::{convert_audio_to_midi_with_postprocess, AudioAnalysisConfig, CCMappingConfig};
 use std::fs;
 use std::path::Path;
 
@@ -59,6 +59,79 @@ fn main() -> anyhow::Result<()> {
                 .value_name("NUMBER")
                 .help("Minimum note duration in ticks (default: 100)")
                 .default_value("100"),
+        )
+        // Post-processing options
+        .arg(
+            Arg::new("no-postprocess")
+                .long("no-postprocess")
+                .help("Disable all post-processing")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("pitch-filter")
+                .long("pitch-filter")
+                .help("Enable pitch range filtering")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("min-pitch")
+                .long("min-pitch")
+                .value_name("NOTE")
+                .help("Minimum MIDI note number (0-127, default: 21)")
+                .default_value("21"),
+        )
+        .arg(
+            Arg::new("max-pitch")
+                .long("max-pitch")
+                .value_name("NOTE")
+                .help("Maximum MIDI note number (0-127, default: 108)")
+                .default_value("108"),
+        )
+        .arg(
+            Arg::new("velocity-expand")
+                .long("velocity-expand")
+                .help("Enable velocity expansion for quiet notes")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("velocity-threshold")
+                .long("velocity-threshold")
+                .value_name("NUMBER")
+                .help("Velocity threshold for expansion (0-127, default: 40)")
+                .default_value("40"),
+        )
+        .arg(
+            Arg::new("velocity-factor")
+                .long("velocity-factor")
+                .value_name("FACTOR")
+                .help("Velocity expansion factor (default: 1.5)")
+                .default_value("1.5"),
+        )
+        .arg(
+            Arg::new("no-join-notes")
+                .long("no-join-notes")
+                .help("Disable note joining and simplification")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("join-gap")
+                .long("join-gap")
+                .value_name("TICKS")
+                .help("Maximum gap between notes to join (default: 24)")
+                .default_value("24"),
+        )
+        .arg(
+            Arg::new("remove-short")
+                .long("remove-short")
+                .value_name("TICKS")
+                .help("Remove notes shorter than this (default: 12)")
+                .default_value("12"),
+        )
+        .arg(
+            Arg::new("no-cc-simplify")
+                .long("no-cc-simplify")
+                .help("Disable CC event simplification")
+                .action(clap::ArgAction::SetTrue),
         );
     
     // Add audio analysis arguments conditionally
@@ -129,6 +202,75 @@ fn main() -> anyhow::Result<()> {
         .unwrap()
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid minimum duration"))?;
+
+    // Parse post-processing arguments
+    let enable_postprocessing = !matches.get_flag("no-postprocess");
+    
+    let pitch_filtering_enabled = matches.get_flag("pitch-filter");
+    let min_midi_note: u8 = matches
+        .get_one::<String>("min-pitch")
+        .unwrap()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid minimum pitch"))?;
+    let max_midi_note: u8 = matches
+        .get_one::<String>("max-pitch")
+        .unwrap()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid maximum pitch"))?;
+        
+    let velocity_expansion_enabled = matches.get_flag("velocity-expand");
+    let velocity_threshold: u8 = matches
+        .get_one::<String>("velocity-threshold")
+        .unwrap()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid velocity threshold"))?;
+    let velocity_expansion_factor: f32 = matches
+        .get_one::<String>("velocity-factor")
+        .unwrap()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid velocity expansion factor"))?;
+        
+    let note_joining_enabled = !matches.get_flag("no-join-notes");
+    let max_join_gap: u32 = matches
+        .get_one::<String>("join-gap")
+        .unwrap()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid join gap"))?;
+    let remove_short_notes_threshold: u32 = matches
+        .get_one::<String>("remove-short")
+        .unwrap()
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid short note threshold"))?;
+        
+    let cc_simplification_enabled = !matches.get_flag("no-cc-simplify");
+    
+    // Create post-processing configuration
+    let postprocess_config = if enable_postprocessing {
+        Some(PostProcessingConfig {
+            enable_pitch_filtering: pitch_filtering_enabled,
+            min_midi_note,
+            max_midi_note,
+            
+            enable_velocity_expansion: velocity_expansion_enabled,
+            velocity_threshold,
+            velocity_expansion_factor,
+            max_expanded_velocity: 100,
+            
+            enable_note_joining: note_joining_enabled,
+            min_note_duration: min_note_duration, // Use the same value
+            max_join_gap,
+            remove_short_notes_threshold,
+            
+            enable_duplicate_removal: true, // Always enabled by default
+            duplicate_time_window: 12,
+            
+            enable_cc_simplification: cc_simplification_enabled,
+            cc_min_change_threshold: 2,
+            cc_max_events_per_second: 20.0,
+        })
+    } else {
+        None
+    };
 
     // Parse audio-specific arguments (only when audio feature is enabled)
     #[cfg(feature = "audio")]
@@ -238,6 +380,25 @@ fn main() -> anyhow::Result<()> {
             println!("Threshold: {:.2}", threshold);
             println!("MIDI settings: {} ticks/quarter, velocity {}, min duration {}", 
                      ticks_per_quarter, default_velocity, min_note_duration);
+                     
+            // Display post-processing settings
+            if let Some(ref pp_config) = postprocess_config {
+                println!("Post-processing: Enabled");
+                if pp_config.enable_pitch_filtering {
+                    println!("  Pitch filter: {} - {} (MIDI notes)", pp_config.min_midi_note, pp_config.max_midi_note);
+                }
+                if pp_config.enable_velocity_expansion {
+                    println!("  Velocity expand: threshold {}, factor {:.1}x", pp_config.velocity_threshold, pp_config.velocity_expansion_factor);
+                }
+                if pp_config.enable_note_joining {
+                    println!("  Note joining: gap {} ticks, remove short < {} ticks", pp_config.max_join_gap, pp_config.remove_short_notes_threshold);
+                }
+                if pp_config.enable_cc_simplification {
+                    println!("  CC simplify: min change {}, max {} events/sec", pp_config.cc_min_change_threshold, pp_config.cc_max_events_per_second);
+                }
+            } else {
+                println!("Post-processing: Disabled");
+            }
 
             // Create audio analysis configuration with default CC mapping and enhanced analysis enabled
             let audio_config = AudioAnalysisConfig {
@@ -255,8 +416,8 @@ fn main() -> anyhow::Result<()> {
                 normalization_target: 0.95,
             };
 
-            // Convert audio to MIDI
-            convert_audio_to_midi(input_path, &audio_config, &midi_config)
+            // Convert audio to MIDI with post-processing
+            convert_audio_to_midi_with_postprocess(input_path, &audio_config, &midi_config, postprocess_config.as_ref())
                 .map_err(|e| anyhow::anyhow!("Audio analysis failed: {}", e))?
         }
         #[cfg(not(feature = "audio"))]
@@ -274,13 +435,32 @@ fn main() -> anyhow::Result<()> {
         println!("Ticks per quarter: {}", ticks_per_quarter);
         println!("Default velocity: {}", default_velocity);
         println!("Minimum duration: {}", min_note_duration);
+        
+        // Display post-processing settings
+        if let Some(ref pp_config) = postprocess_config {
+            println!("Post-processing: Enabled");
+            if pp_config.enable_pitch_filtering {
+                println!("  Pitch filter: {} - {} (MIDI notes)", pp_config.min_midi_note, pp_config.max_midi_note);
+            }
+            if pp_config.enable_velocity_expansion {
+                println!("  Velocity expand: threshold {}, factor {:.1}x", pp_config.velocity_threshold, pp_config.velocity_expansion_factor);
+            }
+            if pp_config.enable_note_joining {
+                println!("  Note joining: gap {} ticks, remove short < {} ticks", pp_config.max_join_gap, pp_config.remove_short_notes_threshold);
+            }
+            if pp_config.enable_cc_simplification {
+                println!("  CC simplify: min change {}, max {} events/sec", pp_config.cc_min_change_threshold, pp_config.cc_max_events_per_second);
+            }
+        } else {
+            println!("Post-processing: Disabled");
+        }
 
         // Read the input CSV file
         let csv_data = fs::read(input_path)
             .map_err(|e| anyhow::anyhow!("Failed to read input file: {}", e))?;
 
-        // Convert CSV to MIDI
-        convert_csv_to_midi(csv_data.as_slice(), midi_config)
+        // Convert CSV to MIDI with post-processing
+        convert_csv_to_midi_with_postprocess(csv_data.as_slice(), midi_config, postprocess_config.as_ref())
             .map_err(|e| anyhow::anyhow!("CSV conversion failed: {}", e))?
     };
 

@@ -8,6 +8,7 @@ use csv_to_midi_core::{
     audio::{AudioAnalysisConfig, CCMappingConfig, ExtendedAudioEvent},
     midi::convert_extended_audio_to_midi,
     midi::generate_midi_file_with_cc,
+    postprocess::{PostProcessingConfig, post_process_midi_with_stats},
 };
 use wasm_bindgen::prelude::*;
 
@@ -141,11 +142,12 @@ fn create_audio_analysis_config(audio_config: &WasmAudioConfig, cc_mapping: &Was
     }
 }
 
-/// Convert CSV string to MIDI byte array
+/// Convert CSV string to MIDI byte array with optional post-processing
 /// 
 /// # Arguments
 /// * `csv_data` - CSV string containing audio analysis data
 /// * `config` - Configuration object for conversion options
+/// * `postprocess_config` - Post-processing configuration (optional)
 /// 
 /// # Returns
 /// * Uint8Array containing MIDI file data, or throws error if conversion fails
@@ -153,14 +155,46 @@ fn create_audio_analysis_config(audio_config: &WasmAudioConfig, cc_mapping: &Was
 pub fn convert_csv_to_midi_wasm(
     csv_data: &str,
     config: &WasmConversionConfig,
+    postprocess_config: Option<WasmPostProcessingConfig>,
 ) -> Result<js_sys::Uint8Array, JsValue> {
     console_log!("Starting CSV to MIDI conversion...");
     console_log!("CSV data length: {} bytes", csv_data.len());
     
     let core_config: ConversionConfig = config.clone().into();
     
-    let midi_data = convert_csv_string_to_midi(csv_data, core_config)
+    // Get MIDI event collection
+    let mut collection = csv_to_midi_core::convert_csv_string_to_midi_events(csv_data, &core_config)
         .map_err(|e| JsValue::from_str(&format!("Conversion error: {}", e)))?;
+    
+    console_log!("Generated {} note events and {} CC events", 
+                 collection.note_events.len(),
+                 collection.cc_events.len());
+    
+    // Apply post-processing if configured
+    if let Some(pp_config) = postprocess_config {
+        let pp_config_core = create_postprocessing_config(&pp_config);
+        let (processed_collection, stats) = post_process_midi_with_stats(
+            collection, 
+            &pp_config_core, 
+            core_config.ticks_per_quarter
+        ).map_err(|e| JsValue::from_str(&format!("Post-processing error: {}", e)))?;
+        
+        collection = processed_collection;
+        
+        console_log!("Post-processing applied:");
+        console_log!("  Notes: {} -> {} ({} removed)", 
+                     stats.original_note_count, 
+                     stats.final_note_count, 
+                     stats.original_note_count.saturating_sub(stats.final_note_count));
+        console_log!("  CC Events: {} -> {} ({} simplified)", 
+                     stats.original_cc_count, 
+                     stats.final_cc_count, 
+                     stats.cc_events_simplified);
+    }
+    
+    // Generate MIDI file
+    let midi_data = csv_to_midi_core::midi::generate_midi_file_with_cc(collection, &core_config)
+        .map_err(|e| JsValue::from_str(&format!("MIDI file generation error: {}", e)))?;
     
     console_log!("Conversion successful! Generated {} bytes of MIDI data", midi_data.len());
     
@@ -332,13 +366,14 @@ impl WasmAudioConfig {
     }
 }
 
-/// Process audio samples and convert to MIDI with configurable CC mapping
+/// Process audio samples and convert to MIDI with configurable CC mapping and post-processing
 /// 
 /// # Arguments
 /// * `samples` - Float32Array of audio samples
 /// * `audio_config` - Audio analysis configuration
 /// * `cc_mapping` - CC mapping configuration
 /// * `midi_config` - MIDI conversion configuration
+/// * `postprocess_config` - Post-processing configuration (optional)
 /// 
 /// # Returns
 /// * Uint8Array containing MIDI file data
@@ -348,6 +383,7 @@ pub fn process_audio_to_midi(
     audio_config: &WasmAudioConfig,
     cc_mapping: &WasmCCMapping,
     midi_config: &WasmConversionConfig,
+    postprocess_config: Option<WasmPostProcessingConfig>,
 ) -> Result<js_sys::Uint8Array, JsValue> {
     console_log!("Starting enhanced audio processing...");
     console_log!("Audio samples: {} at {}Hz", samples.len(), audio_config.sample_rate);
@@ -383,7 +419,7 @@ pub fn process_audio_to_midi(
     let core_config: ConversionConfig = midi_config.clone().into();
     
     // Convert to MIDI with configurable CC mapping
-    let midi_event_collection = convert_extended_audio_to_midi(
+    let mut midi_event_collection = convert_extended_audio_to_midi(
         &extended_events, 
         &cc_mapping_config, 
         &core_config
@@ -392,6 +428,28 @@ pub fn process_audio_to_midi(
     console_log!("Generated {} note events and {} CC events", 
                  midi_event_collection.note_events.len(),
                  midi_event_collection.cc_events.len());
+    
+    // Apply post-processing if configured
+    if let Some(pp_config) = postprocess_config {
+        let pp_config_core = create_postprocessing_config(&pp_config);
+        let (processed_collection, stats) = post_process_midi_with_stats(
+            midi_event_collection, 
+            &pp_config_core, 
+            core_config.ticks_per_quarter
+        ).map_err(|e| JsValue::from_str(&format!("Post-processing error: {}", e)))?;
+        
+        midi_event_collection = processed_collection;
+        
+        console_log!("Post-processing applied:");
+        console_log!("  Notes: {} -> {} ({} removed)", 
+                     stats.original_note_count, 
+                     stats.final_note_count, 
+                     stats.original_note_count.saturating_sub(stats.final_note_count));
+        console_log!("  CC Events: {} -> {} ({} simplified)", 
+                     stats.original_cc_count, 
+                     stats.final_cc_count, 
+                     stats.cc_events_simplified);
+    }
     
     // Generate MIDI file with CC data
     let midi_data = generate_midi_file_with_cc(midi_event_collection, &core_config)
@@ -836,6 +894,199 @@ impl WasmCCMapping {
     }
 }
 
+/// WASM-compatible post-processing configuration
+#[wasm_bindgen]
+#[derive(Clone, Debug)]
+pub struct WasmPostProcessingConfig {
+    enable_pitch_filtering: bool,
+    min_midi_note: u8,
+    max_midi_note: u8,
+    
+    enable_velocity_expansion: bool,
+    velocity_threshold: u8,
+    velocity_expansion_factor: f32,
+    max_expanded_velocity: u8,
+    
+    enable_note_joining: bool,
+    min_note_duration: u32,
+    max_join_gap: u32,
+    remove_short_notes_threshold: u32,
+    
+    enable_duplicate_removal: bool,
+    duplicate_time_window: u32,
+    
+    enable_cc_simplification: bool,
+    cc_min_change_threshold: u8,
+    cc_max_events_per_second: f32,
+}
+
+#[wasm_bindgen]
+impl WasmPostProcessingConfig {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        enable_pitch_filtering: Option<bool>,
+        min_midi_note: Option<u8>,
+        max_midi_note: Option<u8>,
+        
+        enable_velocity_expansion: Option<bool>,
+        velocity_threshold: Option<u8>,
+        velocity_expansion_factor: Option<f32>,
+        max_expanded_velocity: Option<u8>,
+        
+        enable_note_joining: Option<bool>,
+        min_note_duration: Option<u32>,
+        max_join_gap: Option<u32>,
+        remove_short_notes_threshold: Option<u32>,
+        
+        enable_duplicate_removal: Option<bool>,
+        duplicate_time_window: Option<u32>,
+        
+        enable_cc_simplification: Option<bool>,
+        cc_min_change_threshold: Option<u8>,
+        cc_max_events_per_second: Option<f32>,
+    ) -> WasmPostProcessingConfig {
+        WasmPostProcessingConfig {
+            enable_pitch_filtering: enable_pitch_filtering.unwrap_or(false),
+            min_midi_note: min_midi_note.unwrap_or(21),
+            max_midi_note: max_midi_note.unwrap_or(108),
+            
+            enable_velocity_expansion: enable_velocity_expansion.unwrap_or(false),
+            velocity_threshold: velocity_threshold.unwrap_or(40),
+            velocity_expansion_factor: velocity_expansion_factor.unwrap_or(1.5),
+            max_expanded_velocity: max_expanded_velocity.unwrap_or(100),
+            
+            enable_note_joining: enable_note_joining.unwrap_or(true),
+            min_note_duration: min_note_duration.unwrap_or(50),
+            max_join_gap: max_join_gap.unwrap_or(24),
+            remove_short_notes_threshold: remove_short_notes_threshold.unwrap_or(12),
+            
+            enable_duplicate_removal: enable_duplicate_removal.unwrap_or(true),
+            duplicate_time_window: duplicate_time_window.unwrap_or(12),
+            
+            enable_cc_simplification: enable_cc_simplification.unwrap_or(true),
+            cc_min_change_threshold: cc_min_change_threshold.unwrap_or(2),
+            cc_max_events_per_second: cc_max_events_per_second.unwrap_or(20.0),
+        }
+    }
+    
+    // Getters and setters for each field
+    #[wasm_bindgen(getter)]
+    pub fn enable_pitch_filtering(&self) -> bool {
+        self.enable_pitch_filtering
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_enable_pitch_filtering(&mut self, value: bool) {
+        self.enable_pitch_filtering = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn min_midi_note(&self) -> u8 {
+        self.min_midi_note
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_min_midi_note(&mut self, value: u8) {
+        self.min_midi_note = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn max_midi_note(&self) -> u8 {
+        self.max_midi_note
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_max_midi_note(&mut self, value: u8) {
+        self.max_midi_note = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn enable_velocity_expansion(&self) -> bool {
+        self.enable_velocity_expansion
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_enable_velocity_expansion(&mut self, value: bool) {
+        self.enable_velocity_expansion = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn velocity_threshold(&self) -> u8 {
+        self.velocity_threshold
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_velocity_threshold(&mut self, value: u8) {
+        self.velocity_threshold = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn velocity_expansion_factor(&self) -> f32 {
+        self.velocity_expansion_factor
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_velocity_expansion_factor(&mut self, value: f32) {
+        self.velocity_expansion_factor = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn enable_note_joining(&self) -> bool {
+        self.enable_note_joining
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_enable_note_joining(&mut self, value: bool) {
+        self.enable_note_joining = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn max_join_gap(&self) -> u32 {
+        self.max_join_gap
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_max_join_gap(&mut self, value: u32) {
+        self.max_join_gap = value;
+    }
+    
+    #[wasm_bindgen(getter)]
+    pub fn enable_cc_simplification(&self) -> bool {
+        self.enable_cc_simplification
+    }
+    
+    #[wasm_bindgen(setter)]
+    pub fn set_enable_cc_simplification(&mut self, value: bool) {
+        self.enable_cc_simplification = value;
+    }
+}
+
+/// Helper function to convert WASM post-processing config to core config
+fn create_postprocessing_config(config: &WasmPostProcessingConfig) -> PostProcessingConfig {
+    PostProcessingConfig {
+        enable_pitch_filtering: config.enable_pitch_filtering,
+        min_midi_note: config.min_midi_note,
+        max_midi_note: config.max_midi_note,
+        
+        enable_velocity_expansion: config.enable_velocity_expansion,
+        velocity_threshold: config.velocity_threshold,
+        velocity_expansion_factor: config.velocity_expansion_factor,
+        max_expanded_velocity: config.max_expanded_velocity,
+        
+        enable_note_joining: config.enable_note_joining,
+        min_note_duration: config.min_note_duration,
+        max_join_gap: config.max_join_gap,
+        remove_short_notes_threshold: config.remove_short_notes_threshold,
+        
+        enable_duplicate_removal: config.enable_duplicate_removal,
+        duplicate_time_window: config.duplicate_time_window,
+        
+        enable_cc_simplification: config.enable_cc_simplification,
+        cc_min_change_threshold: config.cc_min_change_threshold,
+        cc_max_events_per_second: config.cc_max_events_per_second,
+    }
+}
+
 // Note: Advanced CC mapping is not available in the WASM version
 // This is maintained for API compatibility but doesn't map to core functionality
 
@@ -856,6 +1107,18 @@ pub fn create_default_cc_mapping() -> WasmCCMapping {
 #[wasm_bindgen]
 pub fn create_default_audio_config() -> WasmAudioConfig {
     WasmAudioConfig::new(None, None, None, None, None, None, None, None, None, None, None)
+}
+
+/// Create a default post-processing configuration
+#[wasm_bindgen]
+pub fn create_default_postprocessing_config() -> WasmPostProcessingConfig {
+    WasmPostProcessingConfig::new(
+        None, None, None,  // pitch filtering disabled by default
+        None, None, None, None,  // velocity expansion disabled by default 
+        None, None, None, None,  // note joining enabled by default
+        None, None,  // duplicate removal enabled by default
+        None, None, None  // CC simplification enabled by default
+    )
 }
 
 /// Get library version information

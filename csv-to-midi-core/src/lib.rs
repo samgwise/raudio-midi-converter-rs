@@ -8,12 +8,14 @@ use thiserror::Error;
 
 pub mod midi;
 pub mod parser;
+pub mod postprocess;
 
 #[cfg(feature = "audio")]
 pub mod audio;
 
 pub use midi::*;
 pub use parser::*;
+pub use postprocess::*;
 
 #[cfg(feature = "audio")]
 pub use audio::*;
@@ -100,6 +102,50 @@ pub fn convert_csv_string_to_midi(
     config: ConversionConfig,
 ) -> Result<Vec<u8>> {
     convert_csv_to_midi(csv_string.as_bytes(), config)
+}
+
+/// Convert CSV to MIDI event collection (for post-processing)
+pub fn convert_csv_to_midi_events<R: Read>(
+    csv_data: R,
+    config: &ConversionConfig,
+) -> Result<MidiEventCollection> {
+    // Parse CSV data
+    let audio_events = parse_csv_data(csv_data)?;
+    
+    // Convert to MIDI events with CC data
+    convert_to_midi_events_with_cc(&audio_events, config)
+}
+
+/// Convenience function for converting CSV string to MIDI events
+pub fn convert_csv_string_to_midi_events(
+    csv_string: &str,
+    config: &ConversionConfig,
+) -> Result<MidiEventCollection> {
+    convert_csv_to_midi_events(csv_string.as_bytes(), config)
+}
+
+/// Convert CSV to MIDI with optional post-processing
+pub fn convert_csv_to_midi_with_postprocess<R: Read>(
+    csv_data: R,
+    config: ConversionConfig,
+    postprocess_config: Option<&PostProcessingConfig>,
+) -> Result<Vec<u8>> {
+    // Get MIDI event collection
+    let mut collection = convert_csv_to_midi_events(csv_data, &config)?;
+    
+    // Apply post-processing if configured
+    if let Some(pp_config) = postprocess_config {
+        let (processed_collection, stats) = post_process_midi_with_stats(collection, pp_config, config.ticks_per_quarter)?;
+        collection = processed_collection;
+        
+        // Log post-processing stats (optional)
+        eprintln!("Post-processing stats:");
+        eprintln!("  Notes: {} -> {} ({} removed)", stats.original_note_count, stats.final_note_count, stats.original_note_count.saturating_sub(stats.final_note_count));
+        eprintln!("  CC Events: {} -> {} ({} simplified)", stats.original_cc_count, stats.final_cc_count, stats.cc_events_simplified);
+    }
+    
+    // Generate MIDI file
+    generate_midi_file_with_cc(collection, &config)
 }
 
 #[cfg(test)]

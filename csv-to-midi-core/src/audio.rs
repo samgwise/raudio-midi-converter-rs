@@ -706,6 +706,47 @@ pub fn convert_audio_to_midi<P: AsRef<Path>>(
     crate::midi::generate_midi_file_with_cc(collection, midi_config)
 }
 
+/// Convert audio file to MIDI event collection (for post-processing)
+pub fn convert_audio_to_midi_events<P: AsRef<Path>>(
+    file_path: P,
+    audio_config: &AudioAnalysisConfig,
+    midi_config: &ConversionConfig,
+) -> Result<crate::midi::MidiEventCollection> {
+    // Analyze audio file
+    let analysis = analyze_audio_file(file_path, audio_config)?;
+    
+    // Build extended events per analysis frame for rich CC data
+    let extended_events = build_extended_events_from_analysis(&analysis);
+    
+    // Convert to MIDI with configurable CC mapping
+    crate::midi::convert_extended_audio_to_midi(&extended_events, &audio_config.cc_mapping, midi_config)
+}
+
+/// Convert audio file to MIDI with optional post-processing
+pub fn convert_audio_to_midi_with_postprocess<P: AsRef<Path>>(
+    file_path: P,
+    audio_config: &AudioAnalysisConfig,
+    midi_config: &ConversionConfig,
+    postprocess_config: Option<&crate::postprocess::PostProcessingConfig>,
+) -> Result<Vec<u8>> {
+    // Get MIDI event collection
+    let mut collection = convert_audio_to_midi_events(file_path, audio_config, midi_config)?;
+    
+    // Apply post-processing if configured
+    if let Some(pp_config) = postprocess_config {
+        let (processed_collection, stats) = crate::postprocess::post_process_midi_with_stats(collection, pp_config, midi_config.ticks_per_quarter)?;
+        collection = processed_collection;
+        
+        // Log post-processing stats (optional)
+        eprintln!("Post-processing stats:");
+        eprintln!("  Notes: {} -> {} ({} removed)", stats.original_note_count, stats.final_note_count, stats.original_note_count.saturating_sub(stats.final_note_count));
+        eprintln!("  CC Events: {} -> {} ({} simplified)", stats.original_cc_count, stats.final_cc_count, stats.cc_events_simplified);
+    }
+    
+    // Generate MIDI file
+    crate::midi::generate_midi_file_with_cc(collection, midi_config)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
