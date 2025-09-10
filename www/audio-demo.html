@@ -183,6 +183,68 @@
             color: #0d47a1;
             display: none;
         }
+        
+        /* Thinking Spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .processing-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .processing-modal {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-width: 300px;
+        }
+        
+        .big-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        .processing-text {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .processing-subtext {
+            font-size: 14px;
+            color: #666;
+            font-style: italic;
+        }
         input[type="checkbox"] {
             margin-right: 8px;
         }
@@ -475,12 +537,21 @@
         </div>
 
         <div class="processing-status" id="processing-status">
-            Processing audio... This may take a moment.
+            <span class="spinner"></span>Processing audio... This may take a moment.
         </div>
 
         <button onclick="convertToMidi()" id="convert-button" disabled>Convert to MIDI</button>
 
         <div id="result"></div>
+    </div>
+
+    <!-- Processing Overlay -->
+    <div id="processing-overlay" class="processing-overlay">
+        <div class="processing-modal">
+            <div class="big-spinner"></div>
+            <div class="processing-text" id="processing-text">Processing...</div>
+            <div class="processing-subtext" id="processing-subtext">Analyzing audio and generating MIDI file</div>
+        </div>
     </div>
 
     <script type="module">
@@ -598,6 +669,22 @@
                 parseFloat(document.getElementById('cc-max-rate').value)
             );
         }
+        
+        function showProcessingOverlay(text, subtext) {
+            const overlay = document.getElementById('processing-overlay');
+            const textElement = document.getElementById('processing-text');
+            const subtextElement = document.getElementById('processing-subtext');
+            
+            textElement.textContent = text || 'Processing...';
+            subtextElement.textContent = subtext || 'Please wait while we process your request';
+            
+            overlay.style.display = 'flex';
+        }
+        
+        function hideProcessingOverlay() {
+            const overlay = document.getElementById('processing-overlay');
+            overlay.style.display = 'none';
+        }
 
         window.handleCsvFileUpload = function(event) {
             const file = event.target.files[0];
@@ -692,7 +779,7 @@
             const statusDiv = document.getElementById('processing-status');
             
             convertButton.disabled = true;
-            convertButton.textContent = 'Converting...';
+            convertButton.innerHTML = '<span class="spinner"></span>Converting...';
             
             try {
                 let midiArray;
@@ -706,6 +793,9 @@
                         return;
                     }
                     
+                    // Show processing spinner
+                    showProcessingOverlay('Converting CSV to MIDI...', 'Processing CSV data and generating MIDI file');
+                    
                     // Get configuration values
                     const config = new WasmConversionConfig(
                         parseInt(document.getElementById('ticks').value),
@@ -717,6 +807,9 @@
                     // Get post-processing configuration
                     const postprocessConfig = createPostProcessingConfig();
                     
+                    // Use setTimeout to allow UI update before processing
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    
                     // Convert CSV to MIDI with post-processing
                     midiArray = convert_csv_to_midi_wasm(csvData, config, postprocessConfig);
                     
@@ -725,6 +818,9 @@
                         showResult('Please select an audio file first.', 'error');
                         return;
                     }
+                    
+                    // Show processing spinner
+                    showProcessingOverlay('Analyzing Audio...', 'Extracting pitch and spectral features from audio data');
                     
                     statusDiv.style.display = 'block';
                     
@@ -776,6 +872,12 @@
                     
                     // Get post-processing configuration
                     const postprocessConfig = createPostProcessingConfig();
+                    
+                    // Use setTimeout to allow UI update before heavy processing
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    
+                    // Update spinner message for MIDI conversion phase
+                    showProcessingOverlay('Converting to MIDI...', 'Generating MIDI events with CC data and post-processing');
                     
                     // Process audio and convert to MIDI with enhanced analysis and post-processing
                     midiArray = process_audio_to_midi(samples, audioConfig, ccMapping, midiConfig, postprocessConfig);
@@ -829,6 +931,10 @@
                 showResult(`Conversion failed: ${error.message}`, 'error');
                 console.error('Conversion error:', error);
             } finally {
+                // Hide processing overlay
+                hideProcessingOverlay();
+                
+                // Restore button state
                 convertButton.disabled = false;
                 convertButton.textContent = currentMode === 'audio' ? 'Analyze Audio & Convert to MIDI' : 'Convert to MIDI';
                 statusDiv.style.display = 'none';
