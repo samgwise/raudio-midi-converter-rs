@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>CSV to MIDI Converter - Audio Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+        .mode-button {
+            padding: 10px 20px;
+            border: 2px solid #007bff;
+            background: white;
+            color: #007bff;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .mode-button.active {
+            background: #007bff;
+            color: white;
+        }
+        .mode-button:hover {
+            background: #0056b3;
+            color: white;
+            border-color: #0056b3;
+        }
+        .processing-mode {
+            display: none;
+        }
+        .processing-mode.active {
+            display: block;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea, input[type="file"], input[type="number"], input[type="range"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 200px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .audio-config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+        .range-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .range-container input[type="range"] {
+            flex: 1;
+        }
+        .range-value {
+            min-width: 60px;
+            text-align: center;
+            font-weight: bold;
+            color: #007bff;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 3px;
+        }
+        .download-link:hover {
+            background: #1e7e34;
+        }
+        .sample-button {
+            background: #6c757d;
+            font-size: 14px;
+            padding: 8px 16px;
+            margin-top: 10px;
+        }
+        .sample-button:hover {
+            background: #545b62;
+        }
+        .audio-info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .audio-info h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .audio-visualizer {
+            width: 100%;
+            height: 150px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f8f9fa;
+            margin-top: 10px;
+        }
+        .processing-status {
+            text-align: center;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+            background: #e3f2fd;
+            color: #0d47a1;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎵 CSV to MIDI Converter - Audio Demo</h1>
+        
+        <div class="mode-selector">
+            <button class="mode-button active" onclick="switchMode('csv')">CSV Processing</button>
+            <button class="mode-button" onclick="switchMode('audio')">Audio Processing</button>
+        </div>
+
+        <!-- CSV Processing Mode -->
+        <div id="csv-mode" class="processing-mode active">
+            <div class="form-group">
+                <label for="csv-input">CSV Audio Analysis Data:</label>
+                <textarea id="csv-input" placeholder="Paste your CSV data here, or use the file input below...&#10;&#10;Expected format:&#10;timestamp,frequency,amplitude,[channel]&#10;&#10;Example:&#10;0.241904762,440.0,0.5,[1]&#10;0.5,0,0.0&#10;1.0,880.0,0.7,[1]"></textarea>
+                
+                <div class="sample-data">
+                    <button type="button" class="sample-button" onclick="loadSampleData()">Load Sample Data</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="csv-file-input">Or upload a CSV file:</label>
+                <input type="file" id="csv-file-input" accept=".csv" onchange="handleCsvFileUpload(event)">
+            </div>
+        </div>
+
+        <!-- Audio Processing Mode -->
+        <div id="audio-mode" class="processing-mode">
+            <div class="form-group">
+                <label for="audio-file-input">Select Audio File (WAV, MP3, M4A, etc.):</label>
+                <input type="file" id="audio-file-input" accept="audio/*" onchange="handleAudioFileUpload(event)">
+            </div>
+
+            <div id="audio-info" class="audio-info" style="display: none;">
+                <h4>Audio File Information</h4>
+                <div id="audio-details"></div>
+                <canvas id="audio-visualizer" class="audio-visualizer"></canvas>
+            </div>
+
+            <div class="form-group">
+                <label>Audio Analysis Settings:</label>
+                <div class="audio-config-grid">
+                    <div>
+                        <label for="min-freq">Min Frequency (Hz):</label>
+                        <div class="range-container">
+                            <input type="range" id="min-freq" min="50" max="1000" value="65" oninput="updateRangeValue('min-freq', this.value)">
+                            <span class="range-value" id="min-freq-value">65</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="max-freq">Max Frequency (Hz):</label>
+                        <div class="range-container">
+                            <input type="range" id="max-freq" min="500" max="4000" value="2093" oninput="updateRangeValue('max-freq', this.value)">
+                            <span class="range-value" id="max-freq-value">2093</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="threshold">Detection Threshold:</label>
+                        <div class="range-container">
+                            <input type="range" id="threshold" min="0" max="1" step="0.01" value="0.1" oninput="updateRangeValue('threshold', this.value)">
+                            <span class="range-value" id="threshold-value">0.10</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="frame-size">Frame Size:</label>
+                        <select id="frame-size" onchange="updateFrameSize()">
+                            <option value="1024">1024 samples</option>
+                            <option value="2048" selected>2048 samples</option>
+                            <option value="4096">4096 samples</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="hop-size">Hop Size:</label>
+                        <select id="hop-size" onchange="updateHopSize()">
+                            <option value="256">256 samples</option>
+                            <option value="512" selected>512 samples</option>
+                            <option value="1024">1024 samples</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Common MIDI Settings -->
+        <div class="form-group">
+            <label>MIDI Conversion Settings:</label>
+            <div class="config-grid">
+                <div>
+                    <label for="ticks">Ticks per Quarter Note:</label>
+                    <input type="number" id="ticks" value="480" min="1" max="960">
+                </div>
+                <div>
+                    <label for="velocity">Default Velocity (0-127):</label>
+                    <input type="number" id="velocity" value="64" min="0" max="127">
+                </div>
+                <div>
+                    <label for="duration">Min Note Duration (ticks):</label>
+                    <input type="number" id="duration" value="100" min="1" max="1000">
+                </div>
+                <div>
+                    <label for="octave">Base Octave:</label>
+                    <input type="number" id="octave" value="4" min="0" max="8">
+                </div>
+            </div>
+        </div>
+
+        <div class="processing-status" id="processing-status">
+            Processing audio... This may take a moment.
+        </div>
+
+        <button onclick="convertToMidi()" id="convert-button" disabled>Convert to MIDI</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script type="module">
+        import init, { 
+            convert_csv_to_midi_wasm, 
+            process_audio_to_midi,
+            WasmConversionConfig,
+            WasmAudioConfig,
+            create_default_config,
+            create_default_audio_config,
+            get_version,
+            init_panic_hook
+        } from './pkg/csv_to_midi_wasm.js';
+
+        let wasm;
+        let currentMode = 'csv';
+        let audioBuffer = null;
+        let audioContext = null;
+
+        async function run() {
+            wasm = await init();
+            init_panic_hook();
+            
+            console.log('CSV to MIDI WASM library loaded, version:', get_version());
+            document.getElementById('convert-button').disabled = false;
+            
+            // Initialize audio context
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn('Web Audio API not supported:', e);
+            }
+        }
+
+        window.switchMode = function(mode) {
+            currentMode = mode;
+            
+            // Update button states
+            document.querySelectorAll('.mode-button').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update mode displays
+            document.querySelectorAll('.processing-mode').forEach(div => div.classList.remove('active'));
+            document.getElementById(mode + '-mode').classList.add('active');
+            
+            // Update convert button text
+            const convertBtn = document.getElementById('convert-button');
+            if (mode === 'audio') {
+                convertBtn.textContent = 'Analyze Audio & Convert to MIDI';
+            } else {
+                convertBtn.textContent = 'Convert to MIDI';
+            }
+        };
+
+        window.updateRangeValue = function(id, value) {
+            const display = document.getElementById(id + '-value');
+            if (id === 'threshold') {
+                display.textContent = parseFloat(value).toFixed(2);
+            } else {
+                display.textContent = value;
+            }
+        };
+
+        window.updateFrameSize = function() {
+            console.log('Frame size updated to:', document.getElementById('frame-size').value);
+        };
+
+        window.updateHopSize = function() {
+            console.log('Hop size updated to:', document.getElementById('hop-size').value);
+        };
+
+        window.handleCsvFileUpload = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('csv-input').value = e.target.result;
+            };
+            reader.readAsText(file);
+        };
+
+        window.handleAudioFileUpload = async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!audioContext) {
+                showResult('Web Audio API is not supported in this browser.', 'error');
+                return;
+            }
+
+            try {
+                showResult('Loading audio file...', 'warning');
+                
+                const arrayBuffer = await file.arrayBuffer();
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                // Display audio info
+                const audioInfo = document.getElementById('audio-info');
+                const audioDetails = document.getElementById('audio-details');
+                
+                audioDetails.innerHTML = `
+                    <strong>File:</strong> ${file.name}<br>
+                    <strong>Duration:</strong> ${audioBuffer.duration.toFixed(2)} seconds<br>
+                    <strong>Sample Rate:</strong> ${audioBuffer.sampleRate} Hz<br>
+                    <strong>Channels:</strong> ${audioBuffer.numberOfChannels}<br>
+                    <strong>Total Samples:</strong> ${audioBuffer.length.toLocaleString()}
+                `;
+                
+                audioInfo.style.display = 'block';
+                
+                // Draw waveform visualization
+                drawWaveform(audioBuffer);
+                
+                showResult('Audio file loaded successfully! Ready for processing.', 'success');
+                
+            } catch (error) {
+                showResult(`Failed to load audio file: ${error.message}`, 'error');
+                console.error('Audio loading error:', error);
+            }
+        };
+
+        function drawWaveform(buffer) {
+            const canvas = document.getElementById('audio-visualizer');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // Clear canvas
+            ctx.fillStyle = '#f8f9fa';
+            ctx.fillRect(0, 0, width, height);
+            
+            // Get audio data (mix down to mono if stereo)
+            const data = buffer.getChannelData(0);
+            const step = Math.ceil(data.length / width);
+            const amp = height / 2;
+            
+            // Draw waveform
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            for (let i = 0; i < width; i++) {
+                const min = Math.min(...Array.from(data.slice(i * step, (i + 1) * step)));
+                const max = Math.max(...Array.from(data.slice(i * step, (i + 1) * step)));
+                
+                ctx.moveTo(i, (1 + min) * amp);
+                ctx.lineTo(i, (1 + max) * amp);
+            }
+            
+            ctx.stroke();
+        }
+
+        window.convertToMidi = async function() {
+            const resultDiv = document.getElementById('result');
+            const convertButton = document.getElementById('convert-button');
+            const statusDiv = document.getElementById('processing-status');
+            
+            convertButton.disabled = true;
+            convertButton.textContent = 'Converting...';
+            
+            try {
+                let midiArray;
+                
+                if (currentMode === 'csv') {
+                    const csvInput = document.getElementById('csv-input');
+                    const csvData = csvInput.value.trim();
+                    
+                    if (!csvData) {
+                        showResult('Please enter CSV data or upload a file.', 'error');
+                        return;
+                    }
+                    
+                    // Get configuration values
+                    const config = new WasmConversionConfig(
+                        parseInt(document.getElementById('ticks').value),
+                        parseInt(document.getElementById('duration').value),
+                        parseInt(document.getElementById('velocity').value),
+                        parseInt(document.getElementById('octave').value)
+                    );
+                    
+                    // Convert CSV to MIDI
+                    midiArray = convert_csv_to_midi_wasm(csvData, config);
+                    
+                } else if (currentMode === 'audio') {
+                    if (!audioBuffer) {
+                        showResult('Please select an audio file first.', 'error');
+                        return;
+                    }
+                    
+                    statusDiv.style.display = 'block';
+                    
+                    // Get audio samples (mix down to mono if stereo)
+                    const samples = audioBuffer.getChannelData(0);
+                    
+                    // Get configuration values
+                    const audioConfig = new WasmAudioConfig(
+                        audioBuffer.sampleRate,
+                        parseInt(document.getElementById('frame-size').value),
+                        parseInt(document.getElementById('hop-size').value),
+                        parseFloat(document.getElementById('min-freq').value),
+                        parseFloat(document.getElementById('max-freq').value),
+                        parseFloat(document.getElementById('threshold').value)
+                    );
+                    
+                    const midiConfig = new WasmConversionConfig(
+                        parseInt(document.getElementById('ticks').value),
+                        parseInt(document.getElementById('duration').value),
+                        parseInt(document.getElementById('velocity').value),
+                        parseInt(document.getElementById('octave').value)
+                    );
+                    
+                    // Process audio and convert to MIDI
+                    midiArray = process_audio_to_midi(samples, audioConfig, midiConfig);
+                    
+                    statusDiv.style.display = 'none';
+                }
+                
+                // Create download link
+                const midiBlob = new Blob([midiArray], { type: 'audio/midi' });
+                const downloadUrl = URL.createObjectURL(midiBlob);
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                const filename = `${currentMode}-to-midi-${timestamp}.mid`;
+                
+                showResult(`
+                    <strong>Conversion successful!</strong><br>
+                    Generated MIDI file: ${midiArray.length} bytes<br>
+                    <a href="${downloadUrl}" download="${filename}" class="download-link">
+                        📥 Download ${filename}
+                    </a>
+                `, 'success');
+                
+            } catch (error) {
+                showResult(`Conversion failed: ${error.message}`, 'error');
+                console.error('Conversion error:', error);
+            } finally {
+                convertButton.disabled = false;
+                convertButton.textContent = currentMode === 'audio' ? 'Analyze Audio & Convert to MIDI' : 'Convert to MIDI';
+                statusDiv.style.display = 'none';
+            }
+        };
+
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        window.loadSampleData = function() {
+            const sampleData = `0.241904762,0.618992,0.305124717,[2]
+0.241904762,2793.83,0.305124717,[1]
+0.547052154,0,0.000000000
+0.852381078,1396.91,0.305124717,[1]
+1.157709251,0,0.000000000
+1.463038095,698.456,0.152562359,[2]
+1.768367347,0,0.000000000
+2.073696599,349.228,0.076281179,[1]`;
+            
+            document.getElementById('csv-input').value = sampleData;
+        };
+
+        // Initialize when page loads
+        run();
+    </script>
+</body>
+</html>

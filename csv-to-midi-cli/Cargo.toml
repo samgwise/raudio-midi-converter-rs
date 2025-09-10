@@ -11,6 +11,10 @@ description = "Command-line interface for converting CSV audio analysis data to 
 name = "csv-to-midi"
 path = "src/main.rs"
 
+[features]
+default = []
+audio = ["csv-to-midi-core/audio"]
+
 [dependencies]
 csv-to-midi-core = { path = "../csv-to-midi-core" }
 clap = { version = "4.4", features = ["derive"] }

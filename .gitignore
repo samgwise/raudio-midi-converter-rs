@@ -1,3 +1,6 @@
+# Prevent binary audio files
+*.wav
+
 # Rust/Cargo build artifacts
 /target/
 **/target/

@@ -9,8 +9,14 @@ use thiserror::Error;
 pub mod midi;
 pub mod parser;
 
+#[cfg(feature = "audio")]
+pub mod audio;
+
 pub use midi::*;
 pub use parser::*;
+
+#[cfg(feature = "audio")]
+pub use audio::*;
 
 /// Errors that can occur during CSV to MIDI conversion
 #[derive(Error, Debug)]
