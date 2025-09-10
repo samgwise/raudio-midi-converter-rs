@@ -5,7 +5,7 @@ This guide explains how to deploy the CSV to MIDI Converter web application to C
 ## Prerequisites
 
 1. **Cloudflare Account**: Sign up at [cloudflare.com](https://cloudflare.com)
-2. **Node.js**: Version 16 or higher
+2. **Node.js**: Version 18 or higher (required for Wrangler 4.x)
 3. **Rust & wasm-pack**: For building WebAssembly modules
 4. **Git**: For version control
 
@@ -144,20 +144,28 @@ npm run logs:staging
 
 ### Common Issues
 
-1. **WASM Loading Issues**:
+1. **Wrangler Version Issues**:
+   - If you get "unexpected fields" or "routes should be an array" errors, update Wrangler:
+     ```bash
+     npm install --save-dev wrangler@latest
+     ```
+   - Clear Wrangler cache if needed: `npx wrangler logout && npx wrangler login`
+
+2. **WASM Loading Issues**:
    - Ensure MIME type `application/wasm` is properly set
    - Check that CORS headers are configured correctly
    - Verify the WASM file is accessible at the correct path
 
-2. **Build Failures**:
+3. **Build Failures**:
    - Ensure Rust toolchain is installed: `rustup update`
    - Check wasm-pack is installed: `wasm-pack --version`
    - Try rebuilding: `npm run build:wasm`
 
-3. **Deployment Errors**:
+4. **Deployment Errors**:
    - Verify account ID in `wrangler.toml`
    - Check authentication: `npx wrangler whoami`
    - Ensure you're within usage limits
+   - For "ASSETS" binding errors, ensure using Wrangler 4.x
 
 ### Debug Steps
 

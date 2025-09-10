@@ -62,7 +62,7 @@ function addSecurityHeaders(response) {
 }
 
 // Handle request routing
-async function handleRequest(request) {
+async function handleRequest(request, env) {
   const url = new URL(request.url);
   let pathname = url.pathname;
   
@@ -75,8 +75,8 @@ async function handleRequest(request) {
   const assetPath = pathname.startsWith('/') ? pathname.slice(1) : pathname;
   
   try {
-    // Try to get the asset from the static files
-    const asset = await ASSETS.fetch(request.url);
+    // Try to get the asset from the static files using the new env.ASSETS binding
+    const asset = await env.ASSETS.fetch(request.url);
     
     if (asset.status === 404) {
       // If asset not found, check for common routes
@@ -85,7 +85,7 @@ async function handleRequest(request) {
         return new Response('File not found', { status: 404 });
       } else {
         // SPA routing - serve index.html for paths without extensions
-        const indexAsset = await ASSETS.fetch(new URL('/index.html', request.url).toString());
+        const indexAsset = await env.ASSETS.fetch(new URL('/audio_demo.html', request.url).toString());
         if (indexAsset.status === 200) {
           const response = new Response(indexAsset.body, {
             ...indexAsset,
@@ -122,13 +122,13 @@ async function handleRequest(request) {
 }
 
 // Handle different HTTP methods
-async function handleMethodRequest(request) {
+async function handleMethodRequest(request, env) {
   const { method } = request;
   
   switch (method) {
     case 'GET':
     case 'HEAD':
-      return handleRequest(request);
+      return handleRequest(request, env);
     case 'OPTIONS':
       // Handle CORS preflight requests
       return new Response(null, {
@@ -145,18 +145,14 @@ async function handleMethodRequest(request) {
   }
 }
 
-// Main event listener
-addEventListener('fetch', event => {
-  event.respondWith(handleMethodRequest(event.request));
-});
-
-// Handle worker lifecycle events
-addEventListener('scheduled', event => {
-  // Handle any scheduled tasks if needed
-  event.waitUntil(handleScheduled(event));
-});
-
-async function handleScheduled(event) {
-  // Placeholder for any scheduled maintenance tasks
-  console.log('Scheduled event triggered:', event.cron);
-}
+// Export handlers for new module worker format
+export default {
+  async fetch(request, env, ctx) {
+    return handleMethodRequest(request, env);
+  },
+  
+  async scheduled(event, env, ctx) {
+    // Handle any scheduled tasks if needed
+    console.log('Scheduled event triggered:', event.cron);
+  }
+};
