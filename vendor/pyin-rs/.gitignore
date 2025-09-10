@@ -1,0 +1,10 @@
+.DS_Store
+
+/.vscode
+
+/target
+test_pyin
+test_pyin*/
+
+*.npy
+*.wav

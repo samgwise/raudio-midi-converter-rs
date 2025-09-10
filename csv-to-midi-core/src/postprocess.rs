@@ -4,7 +4,7 @@
 //! through various post-processing techniques including pitch filtering,
 //! velocity expansion, note joining, and other simplification operations.
 
-use crate::{Result, ConversionError};
+use crate::Result;
 use crate::midi::{MidiNoteEvent, MidiCCEvent, MidiEventCollection};
 use std::collections::HashMap;
 

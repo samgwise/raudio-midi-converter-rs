@@ -71,6 +71,12 @@ pub struct AudioAnalysisConfig {
     pub enable_peak_normalization: bool,
     /// Peak normalization target level (0.0-1.0, default: 0.95)
     pub normalization_target: f32,
+    /// Use pYIN algorithm for pitch detection instead of autocorrelation (default: true)
+    #[cfg(feature = "pyin")]
+    pub use_pyin_pitch_detection: bool,
+    /// pYIN resolution parameter (None for default: 0.1)
+    #[cfg(feature = "pyin")]
+    pub pyin_resolution: Option<f64>,
 }
 
 impl Default for AudioAnalysisConfig {
@@ -88,6 +94,10 @@ impl Default for AudioAnalysisConfig {
             enable_zero_crossing_analysis: true,
             enable_peak_normalization: true,
             normalization_target: 0.95, // Leave some headroom
+            #[cfg(feature = "pyin")]
+            use_pyin_pitch_detection: true,
+            #[cfg(feature = "pyin")]
+            pyin_resolution: Some(0.05), // Higher resolution for better accuracy
         }
     }
 }
@@ -281,67 +291,152 @@ fn analyze_with_pyin(
         apply_peak_normalization(&mut working_samples, config.normalization_target);
     }
     
-    // Enhanced frame-based analysis with spectral features
     let mut pitch_events = Vec::new();
-    let frame_size = config.frame_size;
-    let hop_size = config.hop_size;
     
-    // Initialize FFT planner for spectral analysis
-    let mut fft_planner = if config.enable_spectral_analysis {
-        Some(FftPlanner::new())
-    } else {
-        None
-    };
-    
-    // Process audio in overlapping frames
-    for frame_start in (0..working_samples.len()).step_by(hop_size) {
-        if frame_start + frame_size > working_samples.len() {
-            break;
+    // Choose pitch detection method
+    #[cfg(feature = "pyin")]
+    if config.use_pyin_pitch_detection {
+        // Use pYIN for advanced pitch detection
+        let pyin_config = crate::pyin_pitch::PyinConfig {
+            sample_rate,
+            frame_length: config.frame_size,
+            hop_length: Some(config.hop_size),
+            fmin: config.fmin,
+            fmax: config.fmax,
+            resolution: config.pyin_resolution,
+            ..Default::default()
+        };
+        
+        let pyin_detector = crate::pyin_pitch::PyinPitchDetector::new(pyin_config);
+        let pyin_result = pyin_detector.analyze(&working_samples)?;
+        
+        // Initialize FFT planner for spectral analysis
+        let mut fft_planner = if config.enable_spectral_analysis {
+            Some(FftPlanner::new())
+        } else {
+            None
+        };
+        
+        // Convert pYIN results to PitchEvent format with additional spectral analysis
+        for (i, &time) in pyin_result.timestamps.iter().enumerate() {
+            let frequency = pyin_result.frequencies[i];
+            let voiced = pyin_result.voiced_flags[i] && !frequency.is_nan();
+            let confidence = pyin_result.voiced_probabilities[i];
+            
+            // Calculate frame boundaries for spectral analysis
+            let frame_start = (time * sample_rate as f64) as usize;
+            let frame_end = (frame_start + config.frame_size).min(working_samples.len());
+            
+            let (spectral_centroid, spectral_rolloff, zero_crossing_rate, harmonicity) = 
+                if frame_start < working_samples.len() && frame_end > frame_start {
+                    let frame = &working_samples[frame_start..frame_end];
+                    
+                    // Enhanced spectral analysis
+                    let (centroid, rolloff) = if config.enable_spectral_analysis {
+                        if let Some(ref mut planner) = fft_planner {
+                            let centroid = calculate_spectral_centroid(frame, sample_rate as f64, planner);
+                            let rolloff = calculate_spectral_rolloff(frame, sample_rate as f64, planner, 0.85);
+                            (Some(centroid), Some(rolloff))
+                        } else {
+                            (None, None)
+                        }
+                    } else {
+                        (None, None)
+                    };
+                    
+                    let zcr = if config.enable_zero_crossing_analysis {
+                        Some(calculate_zero_crossing_rate(frame))
+                    } else {
+                        None
+                    };
+                    
+                    // Calculate harmonicity if enabled
+                    let harm = if config.enable_harmonicity_analysis && voiced && frequency > 0.0 {
+                        Some(calculate_harmonicity(frame, frequency, sample_rate as f64))
+                    } else {
+                        None
+                    };
+                    
+                    (centroid, rolloff, zcr, harm)
+                } else {
+                    (None, None, None, None)
+                };
+            
+            pitch_events.push(PitchEvent {
+                time,
+                frequency: if voiced { frequency } else { 0.0 },
+                confidence,
+                voiced,
+                spectral_centroid,
+                harmonicity,
+                spectral_rolloff,
+                zero_crossing_rate,
+            });
         }
+    }
+    #[cfg(not(feature = "pyin"))]
+    {
+        // Use frame-based analysis with autocorrelation when pYIN is not available
+        let frame_size = config.frame_size;
+        let hop_size = config.hop_size;
         
-        let frame = &working_samples[frame_start..frame_start + frame_size];
-        let time = frame_start as f64 / sample_rate as f64;
+        // Initialize FFT planner for spectral analysis
+        let mut fft_planner = if config.enable_spectral_analysis {
+            Some(FftPlanner::new())
+        } else {
+            None
+        };
         
-        // Basic pitch detection using autocorrelation
-        let (frequency, confidence) = estimate_pitch_autocorr(frame, sample_rate, config.fmin, config.fmax);
-        let voiced = frequency > 0.0 && confidence > config.threshold;
-        
-        // Enhanced spectral analysis using custom functions
-        let (spectral_centroid, spectral_rolloff) = if config.enable_spectral_analysis {
-            if let Some(ref mut planner) = fft_planner {
-                let centroid = calculate_spectral_centroid(frame, sample_rate as f64, planner);
-                let rolloff = calculate_spectral_rolloff(frame, sample_rate as f64, planner, 0.85);
-                (Some(centroid), Some(rolloff))
+        // Process audio in overlapping frames
+        for frame_start in (0..working_samples.len()).step_by(hop_size) {
+            if frame_start + frame_size > working_samples.len() {
+                break;
+            }
+            
+            let frame = &working_samples[frame_start..frame_start + frame_size];
+            let time = frame_start as f64 / sample_rate as f64;
+            
+            // Basic pitch detection using autocorrelation
+            let (frequency, confidence) = estimate_pitch_autocorr(frame, sample_rate, config.fmin, config.fmax);
+            let voiced = frequency > 0.0 && confidence > config.threshold;
+            
+            // Enhanced spectral analysis using custom functions
+            let (spectral_centroid, spectral_rolloff) = if config.enable_spectral_analysis {
+                if let Some(ref mut planner) = fft_planner {
+                    let centroid = calculate_spectral_centroid(frame, sample_rate as f64, planner);
+                    let rolloff = calculate_spectral_rolloff(frame, sample_rate as f64, planner, 0.85);
+                    (Some(centroid), Some(rolloff))
+                } else {
+                    (None, None)
+                }
             } else {
                 (None, None)
-            }
-        } else {
-            (None, None)
-        };
-        
-        let zero_crossing_rate = if config.enable_zero_crossing_analysis {
-            Some(calculate_zero_crossing_rate(frame))
-        } else {
-            None
-        };
-        
-        // Calculate harmonicity (pitch clarity) if enabled
-        let harmonicity = if config.enable_harmonicity_analysis && voiced {
-            Some(calculate_harmonicity(frame, frequency, sample_rate as f64))
-        } else {
-            None
-        };
-        
-        pitch_events.push(PitchEvent {
-            time,
-            frequency: if voiced { frequency } else { 0.0 },
-            confidence,
-            voiced,
-            spectral_centroid,
-            harmonicity,
-            spectral_rolloff,
-            zero_crossing_rate,
-        });
+            };
+            
+            let zero_crossing_rate = if config.enable_zero_crossing_analysis {
+                Some(calculate_zero_crossing_rate(frame))
+            } else {
+                None
+            };
+            
+            // Calculate harmonicity (pitch clarity) if enabled
+            let harmonicity = if config.enable_harmonicity_analysis && voiced {
+                Some(calculate_harmonicity(frame, frequency, sample_rate as f64))
+            } else {
+                None
+            };
+            
+            pitch_events.push(PitchEvent {
+                time,
+                frequency: if voiced { frequency } else { 0.0 },
+                confidence,
+                voiced,
+                spectral_centroid,
+                harmonicity,
+                spectral_rolloff,
+                zero_crossing_rate,
+            });
+        }
     }
     
     Ok(PitchAnalysisResult {
@@ -872,6 +967,8 @@ mod tests {
         assert_eq!(config.fmin, 65.0);
         assert_eq!(config.fmax, 2093.0);
         assert_eq!(config.threshold, 0.1);
+        assert!(config.use_pyin_pitch_detection);
+        assert_eq!(config.pyin_resolution, Some(0.05));
     }
     
     #[test]

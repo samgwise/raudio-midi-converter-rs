@@ -1,0 +1,25 @@
+[package]
+name = "pyin-rs"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "A pure rust implementation of the FFT-based YIN and P-YIN pitch detection algorithms."
+homepage = "https://github.com/hillin/pyin-rs"
+repository = "https://github.com/hillin/pyin-rs"
+readme = "README.md"
+keywords = ["pitch", "audio", "fft", "yin", "pyin"]
+categories = ["multimedia::audio", "algorithms"]
+
+[features]
+default = ["yin", "pyin"]
+yin = []
+pyin = ["dep:bio", "dep:ndarray"]
+
+[dependencies]
+realfft = "3.4.0"
+bio = { version = "2.3.0", optional = true }
+ndarray = { version = "0.15.6", optional = true }
+
+[dev-dependencies]
+rstest = "0.23.0"
+approx = "0.3.2"

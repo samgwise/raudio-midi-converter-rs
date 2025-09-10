@@ -414,6 +414,8 @@ fn main() -> anyhow::Result<()> {
                 enable_zero_crossing_analysis: true,
                 enable_peak_normalization: true,
                 normalization_target: 0.95,
+                use_pyin_pitch_detection: true,
+                pyin_resolution: Some(0.05),
             };
 
             // Convert audio to MIDI with post-processing

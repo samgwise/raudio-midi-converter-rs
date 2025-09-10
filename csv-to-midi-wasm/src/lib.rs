@@ -1,5 +1,4 @@
 use csv_to_midi_core::{
-    convert_csv_string_to_midi, 
     ConversionConfig, 
     AudioEvent,
 };
@@ -139,6 +138,10 @@ fn create_audio_analysis_config(audio_config: &WasmAudioConfig, cc_mapping: &Was
         enable_zero_crossing_analysis: audio_config.enable_zero_crossing_analysis,
         enable_peak_normalization: audio_config.enable_peak_normalization,
         normalization_target: audio_config.normalization_target,
+        #[cfg(feature = "pyin")]
+        use_pyin_pitch_detection: true, // Default to using pYIN when available
+        #[cfg(feature = "pyin")]
+        pyin_resolution: Some(0.05), // Default resolution
     }
 }
 
@@ -1106,7 +1109,10 @@ pub fn create_default_cc_mapping() -> WasmCCMapping {
 /// Create a default audio configuration
 #[wasm_bindgen]
 pub fn create_default_audio_config() -> WasmAudioConfig {
-    WasmAudioConfig::new(None, None, None, None, None, None, None, None, None, None, None)
+    WasmAudioConfig::new(
+        None, None, None, None, None, None, // basic audio params
+        None, None, None, None, None        // advanced analysis params
+    )
 }
 
 /// Create a default post-processing configuration

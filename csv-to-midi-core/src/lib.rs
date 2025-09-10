@@ -12,13 +12,22 @@ pub mod postprocess;
 
 #[cfg(feature = "audio")]
 pub mod audio;
+#[cfg(feature = "audio")]
+pub mod pitch;
+#[cfg(feature = "pyin")]
+pub mod pyin_pitch;
+#[cfg(all(feature = "audio", feature = "pyin"))]
+pub mod pyin_test;
 
-pub use midi::*;
+// Import functions from midi module
+use midi::{convert_to_midi_events, generate_midi_file, convert_to_midi_events_with_cc, generate_midi_file_with_cc, MidiEventCollection};
 pub use parser::*;
 pub use postprocess::*;
 
 #[cfg(feature = "audio")]
 pub use audio::*;
+#[cfg(feature = "pyin")]
+pub use pyin_pitch::*;
 
 /// Errors that can occur during CSV to MIDI conversion
 #[derive(Error, Debug)]
