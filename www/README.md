@@ -26,6 +26,9 @@ This directory contains the web-based interface for the CSV to MIDI converter.
   - Frame size and hop size
 - Browser-based pitch detection using autocorrelation
 - Direct conversion from audio to MIDI
+- **Enhanced MIDI output with CC data:**
+  - **CC 100**: Pitch contour (fine pitch variations)
+  - **CC 101**: Amplitude (real-time volume changes)
 
 ## Usage
 
@@ -73,7 +76,10 @@ The audio processing mode supports any audio format that the browser can decode:
    - Frame-based analysis with configurable window sizes
    - Autocorrelation-based pitch detection algorithm
    - Frequency range filtering and threshold-based detection
-5. **Conversion**: Detected pitches are converted to MIDI events
+5. **Conversion**: Detected pitches are converted to MIDI events with CC data:
+   - MIDI notes for detected pitches
+   - CC 100 for pitch contour (microtonal variations)
+   - CC 101 for amplitude envelope
 6. **Download**: Generated MIDI file is available for download
 
 ### Performance Notes

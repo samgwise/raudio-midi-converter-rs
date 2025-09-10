@@ -71,9 +71,26 @@ The `www/audio-demo.html` interface provides a complete browser-based audio proc
 - **Real-time waveform visualization** shows your audio data
 - **Interactive controls** for all pitch detection parameters
 - **Instant processing** using WebAssembly for near-native performance
+- **Enhanced MIDI output** with CC data for pitch contours and amplitude
 - **No installation required** - everything runs in your browser
 
 This makes it easy to experiment with different audio files and settings without needing to install the CLI tools.
+
+### MIDI Controller (CC) Enhancement
+
+When processing audio files, the system now generates enhanced MIDI output with Control Change (CC) events:
+
+- **CC 100 - Pitch Contour**: Captures fine pitch variations and microtonal details
+  - Maps fractional semitone deviations to CC values (0-127)
+  - Center value (64) = perfectly on pitch
+  - Provides expressive pitch bend information beyond basic note quantization
+
+- **CC 101 - Amplitude**: Real-time amplitude/volume envelope
+  - Maps audio amplitude (0.0-1.0) to CC values (0-127)
+  - Provides detailed dynamics information for each detected note
+  - Enables more expressive MIDI playback with volume automation
+
+These CC events work alongside traditional note on/off messages to provide a much more expressive and detailed MIDI representation of the original audio.
 
 ## Installation & Usage
 

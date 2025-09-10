@@ -17,6 +17,22 @@ pub struct MidiNoteEvent {
     pub duration_ticks: u32,
 }
 
+/// Represents a MIDI Control Change event
+#[derive(Debug, Clone)]
+pub struct MidiCCEvent {
+    pub channel: u8,
+    pub controller: u8,
+    pub value: u8,
+    pub tick: u32,
+}
+
+/// Combined MIDI events structure
+#[derive(Debug, Clone)]
+pub struct MidiEventCollection {
+    pub note_events: Vec<MidiNoteEvent>,
+    pub cc_events: Vec<MidiCCEvent>,
+}
+
 /// Convert frequency in Hz to MIDI note number
 /// Uses equal temperament with A4 = 440Hz = MIDI note 69
 pub fn frequency_to_midi_note(frequency: f64) -> u8 {
@@ -51,22 +67,65 @@ pub fn seconds_to_ticks(seconds: f64, ticks_per_quarter: u16) -> u32 {
     ticks.round().max(0.0) as u32
 }
 
+/// Convert frequency to pitch contour CC value (0-127)
+/// Maps frequency to a CC range where 64 = center/no bend
+pub fn frequency_to_pitch_contour_cc(frequency: f64) -> u8 {
+    if frequency <= 0.0 {
+        return 64; // Center value for silence
+    }
+    
+    // Convert frequency to MIDI note number (can be fractional)
+    let note_float = 69.0 + 12.0 * (frequency / 440.0).log2();
+    
+    // Get fractional part for fine pitch control
+    let fractional_part = note_float.fract();
+    
+    // Map fractional part to CC range (0-127)
+    // 0.0 = note is perfectly on pitch = CC 64 (center)
+    // -0.5 = half step below = CC 0
+    // +0.5 = half step above = CC 127
+    let cc_value = 64.0 + (fractional_part * 127.0);
+    cc_value.round().clamp(0.0, 127.0) as u8
+}
+
+/// Convert amplitude (0.0-1.0) to CC value (0-127)
+pub fn amplitude_to_cc_value(amplitude: f64) -> u8 {
+    if amplitude <= 0.0 {
+        return 0;
+    }
+    
+    let cc_value = (amplitude * 127.0).round();
+    cc_value.clamp(0.0, 127.0) as u8
+}
+
 /// Convert audio events to MIDI note events
 pub fn convert_to_midi_events(
     audio_events: &[AudioEvent],
     config: &ConversionConfig,
 ) -> Result<Vec<MidiNoteEvent>> {
-    let mut midi_events = Vec::new();
+    let collection = convert_to_midi_events_with_cc(audio_events, config)?;
+    Ok(collection.note_events)
+}
+
+/// Convert audio events to MIDI events including notes and CC data
+pub fn convert_to_midi_events_with_cc(
+    audio_events: &[AudioEvent],
+    config: &ConversionConfig,
+) -> Result<MidiEventCollection> {
+    let mut note_events = Vec::new();
+    let mut cc_events = Vec::new();
     let mut active_notes: HashMap<(u8, u8), (u32, u8)> = HashMap::new(); // (channel, note) -> (start_tick, velocity)
     
     for event in audio_events {
+        let tick = seconds_to_ticks(event.timestamp, config.ticks_per_quarter);
+        let channel = event.channel.unwrap_or(1) - 1; // Convert to 0-based channel
+        
         if event.is_silence() {
             // End all active notes when we hit silence
             for ((channel, note), (start_tick, velocity)) in active_notes.drain() {
-                let current_tick = seconds_to_ticks(event.timestamp, config.ticks_per_quarter);
-                let duration = current_tick.saturating_sub(start_tick).max(config.min_note_duration);
+                let duration = tick.saturating_sub(start_tick).max(config.min_note_duration);
                 
-                midi_events.push(MidiNoteEvent {
+                note_events.push(MidiNoteEvent {
                     channel,
                     note,
                     velocity,
@@ -74,6 +133,21 @@ pub fn convert_to_midi_events(
                     duration_ticks: duration,
                 });
             }
+            
+            // Add CC events for silence (reset values)
+            cc_events.push(MidiCCEvent {
+                channel,
+                controller: 100, // Pitch contour
+                value: 64,       // Center value (no pitch bend)
+                tick,
+            });
+            cc_events.push(MidiCCEvent {
+                channel,
+                controller: 101, // Amplitude
+                value: 0,        // Silence
+                tick,
+            });
+            
             continue;
         }
         
@@ -83,8 +157,24 @@ pub fn convert_to_midi_events(
         }
         
         let velocity = amplitude_to_velocity(event.amplitude, config.default_velocity);
-        let channel = event.channel.unwrap_or(1) - 1; // Convert to 0-based channel
-        let tick = seconds_to_ticks(event.timestamp, config.ticks_per_quarter);
+        
+        // Generate CC events for pitch contour and amplitude
+        let pitch_contour_cc = frequency_to_pitch_contour_cc(event.frequency);
+        let amplitude_cc = amplitude_to_cc_value(event.amplitude);
+        
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: 100, // Pitch contour
+            value: pitch_contour_cc,
+            tick,
+        });
+        
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: 101, // Amplitude
+            value: amplitude_cc,
+            tick,
+        });
         
         let key = (channel, midi_note);
         
@@ -92,7 +182,7 @@ pub fn convert_to_midi_events(
         if let Some((start_tick, prev_velocity)) = active_notes.remove(&key) {
             let duration = tick.saturating_sub(start_tick).max(config.min_note_duration);
             
-            midi_events.push(MidiNoteEvent {
+            note_events.push(MidiNoteEvent {
                 channel,
                 note: midi_note,
                 velocity: prev_velocity,
@@ -112,7 +202,7 @@ pub fn convert_to_midi_events(
         for ((channel, note), (start_tick, velocity)) in active_notes.drain() {
             let duration = end_tick.saturating_sub(start_tick).max(config.min_note_duration);
             
-            midi_events.push(MidiNoteEvent {
+            note_events.push(MidiNoteEvent {
                 channel,
                 note,
                 velocity,
@@ -122,10 +212,14 @@ pub fn convert_to_midi_events(
         }
     }
     
-    // Sort events by start time
-    midi_events.sort_by_key(|event| event.start_tick);
+    // Sort events by time
+    note_events.sort_by_key(|event| event.start_tick);
+    cc_events.sort_by_key(|event| event.tick);
     
-    Ok(midi_events)
+    Ok(MidiEventCollection {
+        note_events,
+        cc_events,
+    })
 }
 
 /// Generate a MIDI file from MIDI note events
@@ -133,55 +227,151 @@ pub fn generate_midi_file(
     midi_events: Vec<MidiNoteEvent>,
     config: &ConversionConfig,
 ) -> Result<Vec<u8>> {
+    let collection = MidiEventCollection {
+        note_events: midi_events,
+        cc_events: Vec::new(),
+    };
+    generate_midi_file_with_cc(collection, config)
+}
+
+/// Generate a MIDI file from MIDI events including CC data
+pub fn generate_midi_file_with_cc(
+    event_collection: MidiEventCollection,
+    config: &ConversionConfig,
+) -> Result<Vec<u8>> {
     // Create MIDI header
     let timing = Timing::Metrical(config.ticks_per_quarter.try_into().unwrap_or(480.into()));
     let header = Header::new(Format::Parallel, timing);
     
     // Group events by channel
-    let mut channels: HashMap<u8, Vec<&MidiNoteEvent>> = HashMap::new();
-    for event in &midi_events {
-        channels.entry(event.channel).or_insert_with(Vec::new).push(event);
+    let mut channels: HashMap<u8, (Vec<&MidiNoteEvent>, Vec<&MidiCCEvent>)> = HashMap::new();
+    
+    for event in &event_collection.note_events {
+        channels.entry(event.channel).or_insert_with(|| (Vec::new(), Vec::new())).0.push(event);
+    }
+    
+    for event in &event_collection.cc_events {
+        channels.entry(event.channel).or_insert_with(|| (Vec::new(), Vec::new())).1.push(event);
     }
     
     let mut tracks = Vec::new();
     
     // Create a track for each channel
-    for (channel, events) in channels {
+    for (channel, (note_events, cc_events)) in channels {
         let mut track_events = Vec::new();
         let mut current_tick = 0u32;
         
-        // Sort events for this channel by start time
-        let mut channel_events = events;
-        channel_events.sort_by_key(|event| event.start_tick);
+        // Create a combined list of all events with their timestamps
+        let mut all_events: Vec<(u32, String)> = Vec::new();
         
-        for event in channel_events {
-            // Add note-on event
-            let delta_time = event.start_tick.saturating_sub(current_tick);
-            track_events.push(TrackEvent {
-                delta: delta_time.try_into().unwrap_or(0.into()),
-                kind: TrackEventKind::Midi {
-                    channel: channel.into(),
-                    message: MidiMessage::NoteOn {
-                        key: event.note.into(),
-                        vel: event.velocity.into(),
-                    },
-                },
-            });
-            current_tick = event.start_tick;
+        // Add note events
+        for event in &note_events {
+            all_events.push((event.start_tick, format!("note_on:{}:{}:{}", event.note, event.velocity, event.duration_ticks)));
+        }
+        
+        // Add CC events
+        for event in &cc_events {
+            all_events.push((event.tick, format!("cc:{}:{}", event.controller, event.value)));
+        }
+        
+        // Sort all events by timestamp
+        all_events.sort_by_key(|event| event.0);
+        
+        // Process events in chronological order
+        let mut active_notes: HashMap<u8, u32> = HashMap::new(); // note -> note_off_tick
+        
+        for (tick, event_data) in all_events {
+            let _delta_time = tick.saturating_sub(current_tick);
             
-            // Add note-off event
-            let note_off_tick = event.start_tick + event.duration_ticks;
-            let delta_time = note_off_tick.saturating_sub(current_tick);
+            // Process any note-off events that should occur before or at this time
+            let mut notes_to_turn_off: Vec<(u8, u32)> = active_notes.iter()
+                .filter(|(_, &note_off_tick)| note_off_tick <= tick)
+                .map(|(&note, &note_off_tick)| (note, note_off_tick))
+                .collect();
+            notes_to_turn_off.sort_by_key(|(_, note_off_tick)| *note_off_tick);
+            
+            for (note, note_off_tick) in notes_to_turn_off {
+                let note_off_delta = note_off_tick.saturating_sub(current_tick);
+                
+                track_events.push(TrackEvent {
+                    delta: note_off_delta.try_into().unwrap_or(0.into()),
+                    kind: TrackEventKind::Midi {
+                        channel: channel.into(),
+                        message: MidiMessage::NoteOff {
+                            key: note.into(),
+                            vel: 0.into(),
+                        },
+                    },
+                });
+                
+                current_tick = note_off_tick;
+                active_notes.remove(&note);
+            }
+            
+            // Process the current event
+            let event_delta = tick.saturating_sub(current_tick);
+            
+            if event_data.starts_with("note_on:") {
+                let parts: Vec<&str> = event_data.split(':').collect();
+                if parts.len() >= 4 {
+                    let note: u8 = parts[1].parse().unwrap_or(60);
+                    let velocity: u8 = parts[2].parse().unwrap_or(64);
+                    let duration: u32 = parts[3].parse().unwrap_or(100);
+                    
+                    track_events.push(TrackEvent {
+                        delta: event_delta.try_into().unwrap_or(0.into()),
+                        kind: TrackEventKind::Midi {
+                            channel: channel.into(),
+                            message: MidiMessage::NoteOn {
+                                key: note.into(),
+                                vel: velocity.into(),
+                            },
+                        },
+                    });
+                    
+                    // Schedule note off
+                    active_notes.insert(note, tick + duration);
+                }
+            } else if event_data.starts_with("cc:") {
+                let parts: Vec<&str> = event_data.split(':').collect();
+                if parts.len() >= 3 {
+                    let controller: u8 = parts[1].parse().unwrap_or(1);
+                    let value: u8 = parts[2].parse().unwrap_or(0);
+                    
+                    track_events.push(TrackEvent {
+                        delta: event_delta.try_into().unwrap_or(0.into()),
+                        kind: TrackEventKind::Midi {
+                            channel: channel.into(),
+                            message: MidiMessage::Controller {
+                                controller: controller.into(),
+                                value: value.into(),
+                            },
+                        },
+                    });
+                }
+            }
+            
+            current_tick = tick;
+        }
+        
+        // Turn off any remaining active notes
+        let mut remaining_notes: Vec<(u8, u32)> = active_notes.into_iter().collect();
+        remaining_notes.sort_by_key(|(_, note_off_tick)| *note_off_tick);
+        
+        for (note, note_off_tick) in remaining_notes {
+            let note_off_delta = note_off_tick.saturating_sub(current_tick);
+            
             track_events.push(TrackEvent {
-                delta: delta_time.try_into().unwrap_or(0.into()),
+                delta: note_off_delta.try_into().unwrap_or(0.into()),
                 kind: TrackEventKind::Midi {
                     channel: channel.into(),
                     message: MidiMessage::NoteOff {
-                        key: event.note.into(),
+                        key: note.into(),
                         vel: 0.into(),
                     },
                 },
             });
+            
             current_tick = note_off_tick;
         }
         

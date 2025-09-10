@@ -413,9 +413,9 @@ pub fn convert_audio_to_midi<P: AsRef<Path>>(
     let min_note_duration = (audio_config.hop_size as f64 * 2.0) / audio_config.target_sample_rate as f64;
     let audio_events = pitch_analysis_to_audio_events(&analysis, min_note_duration);
     
-    // Convert to MIDI using existing pipeline
-    let midi_events = crate::midi::convert_to_midi_events(&audio_events, midi_config)?;
-    crate::midi::generate_midi_file(midi_events, midi_config)
+    // Convert to MIDI with CC for pitch contour (CC100) and amplitude (CC101)
+    let collection = crate::midi::convert_to_midi_events_with_cc(&audio_events, midi_config)?;
+    crate::midi::generate_midi_file_with_cc(collection, midi_config)
 }
 
 #[cfg(test)]

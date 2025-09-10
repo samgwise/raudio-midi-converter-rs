@@ -265,6 +265,13 @@
                         </select>
                     </div>
                 </div>
+                
+                <div class="audio-info" style="margin-top: 15px;">
+                    <h4>📊 MIDI Controller Data</h4>
+                    <p><strong>CC 100 - Pitch Contour:</strong> Fine pitch variations and microtonal details<br>
+                    <strong>CC 101 - Amplitude:</strong> Real-time volume/loudness changes</p>
+                    <p><em>These CC events provide detailed expression data that goes beyond basic note on/off.</em></p>
+                </div>
             </div>
         </div>
 
@@ -527,9 +534,14 @@
                 const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
                 const filename = `${currentMode}-to-midi-${timestamp}.mid`;
                 
+                let ccInfo = '';
+                if (currentMode === 'audio') {
+                    ccInfo = '<br><strong>Includes CC Data:</strong> CC100 (Pitch Contour), CC101 (Amplitude)';
+                }
+                
                 showResult(`
                     <strong>Conversion successful!</strong><br>
-                    Generated MIDI file: ${midiArray.length} bytes<br>
+                    Generated MIDI file: ${midiArray.length} bytes${ccInfo}<br>
                     <a href="${downloadUrl}" download="${filename}" class="download-link">
                         📥 Download ${filename}
                     </a>

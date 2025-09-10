@@ -1,4 +1,4 @@
-use csv_to_midi_core::{convert_csv_string_to_midi, ConversionConfig, AudioEvent, convert_to_midi_events, generate_midi_file};
+use csv_to_midi_core::{convert_csv_string_to_midi, ConversionConfig, AudioEvent, convert_to_midi_events_with_cc, generate_midi_file_with_cc};
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -264,12 +264,12 @@ pub fn process_audio_to_midi(
     
     let core_config: ConversionConfig = midi_config.clone().into();
     
-    // Convert audio events to MIDI events
-    let midi_note_events = convert_to_midi_events(&audio_events, &core_config)
+    // Convert audio events to MIDI events with CC data
+    let midi_collection = convert_to_midi_events_with_cc(&audio_events, &core_config)
         .map_err(|e| JsValue::from_str(&format!("MIDI event conversion error: {}", e)))?;
     
-    // Generate MIDI file
-    let midi_data = generate_midi_file(midi_note_events, &core_config)
+    // Generate MIDI file with CC events for pitch contour (CC100) and amplitude (CC101)
+    let midi_data = generate_midi_file_with_cc(midi_collection, &core_config)
         .map_err(|e| JsValue::from_str(&format!("MIDI file generation error: {}", e)))?;
     
     console_log!("Audio to MIDI conversion successful! Generated {} bytes", midi_data.len());
