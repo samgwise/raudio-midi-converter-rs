@@ -1,0 +1,23 @@
+{
+  "name": "csv-to-midi-wasm",
+  "collaborators": [
+    "Your Name <your.email@example.com>"
+  ],
+  "description": "WebAssembly bindings for converting CSV audio analysis data to MIDI files",
+  "version": "0.1.0",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/csv-to-midi"
+  },
+  "files": [
+    "csv_to_midi_wasm_bg.wasm",
+    "csv_to_midi_wasm.js",
+    "csv_to_midi_wasm.d.ts"
+  ],
+  "module": "csv_to_midi_wasm.js",
+  "types": "csv_to_midi_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

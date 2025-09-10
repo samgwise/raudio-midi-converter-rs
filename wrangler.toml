@@ -18,15 +18,14 @@ name = "audio-to-midi-staging"
 directory = "./www"
 # binding = "ASSETS" # Optional: customize the binding name
 
-# Custom route patterns - routes should be an array
+# Custom route patterns - routes should be at top level
 routes = [
   { pattern = "*audio-to-midi.contrapuntal.cc/*", zone_name = "contrapuntal.cc" }
 ]
 
-# Build configuration
-[build]
-command = "npm run build"
-
 # Variables for the worker
 [vars]
 ENVIRONMENT = "production"
+
+# Note: Build step removed - using pre-built WASM files
+# To rebuild WASM locally, run: npm run build:wasm
