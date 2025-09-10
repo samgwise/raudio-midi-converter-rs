@@ -243,6 +243,29 @@ The web interface provides:
 - **`default_velocity`** (u8): Default note velocity 0-127 (default: 64)
 - **`base_octave`** (u8): Base octave for frequency conversion (default: 4)
 
+## Git LFS Support
+
+This project uses Git LFS (Large File Storage) to efficiently handle binary files:
+
+- **WebAssembly files** (`.wasm`) - Binary modules for browser execution
+- **Generated JavaScript** (`www/pkg/*.js`) - WASM bindings
+- **TypeScript declarations** (`www/pkg/*.d.ts`) - Type definitions
+
+To work with this repository:
+```bash
+# Install Git LFS (if not already installed)
+git lfs install
+
+# Clone with LFS files
+git clone <repository-url>
+cd csv-to-midi
+
+# Pull LFS files (if already cloned)
+git lfs pull
+```
+
+The WASM files are pre-built and committed to enable immediate deployment to Cloudflare Workers without requiring Rust/wasm-pack in the deployment environment.
+
 ## Development
 
 ### Running Tests
