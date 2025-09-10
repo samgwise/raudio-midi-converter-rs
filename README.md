@@ -207,6 +207,27 @@ The web interface requires `wasm-pack` to build the WebAssembly module.
    - `http://localhost:8000/index.html` - CSV processing interface
    - `http://localhost:8000/audio-demo.html` - Enhanced interface with audio processing
 
+### Cloudflare Workers Deployment
+
+For production deployment, the web interface can be deployed to Cloudflare Workers:
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Build and deploy:**
+   ```bash
+   npm run deploy
+   ```
+
+3. **Configure your Cloudflare account:**
+   - Follow the setup instructions in `DEPLOYMENT.md`
+   - Add your account ID to `wrangler.toml`
+   - Authenticate with `npx wrangler login`
+
+See `DEPLOYMENT.md` for detailed deployment instructions.
+
 The web interface provides:
 - **CSV Processing**: Text area for pasting CSV data, file upload, real-time configuration
 - **Audio Processing**: Upload audio files (WAV, MP3, etc.), pitch detection, waveform visualization

@@ -1,0 +1,45 @@
+{
+  "name": "csv-to-midi-web",
+  "version": "1.0.0",
+  "description": "CSV to MIDI Converter - Web Application deployed on Cloudflare Workers",
+  "main": "src/worker.js",
+  "scripts": {
+    "build": "npm run build:wasm",
+    "build:wasm": "wasm-pack build csv-to-midi-wasm --target web --out-dir ../www/pkg --release",
+    "dev": "wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:staging": "npm run build && wrangler deploy --env staging",
+    "deploy:production": "npm run build && wrangler deploy --env production",
+    "preview": "wrangler preview",
+    "logs": "wrangler tail",
+    "logs:staging": "wrangler tail --env staging",
+    "logs:production": "wrangler tail --env production",
+    "wasm:install": "curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh",
+    "serve:local": "cd www && python -m http.server 8000"
+  },
+  "keywords": [
+    "csv",
+    "midi",
+    "audio",
+    "music",
+    "wasm",
+    "rust",
+    "cloudflare-workers"
+  ],
+  "author": "Your Name",
+  "license": "MIT OR Apache-2.0",
+  "devDependencies": {
+    "wrangler": "^3.15.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/csv-to-midi"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/csv-to-midi/issues"
+  },
+  "homepage": "https://github.com/yourusername/csv-to-midi#readme"
+}

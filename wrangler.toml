@@ -1,0 +1,34 @@
+name = "audio-to-midi"
+main = "src/worker.js"
+compatibility_date = "2023-10-30"
+compatibility_flags = ["nodejs_compat"]
+
+# Account ID - you'll need to replace this with your actual Cloudflare account ID
+# Get this from your Cloudflare dashboard
+# account_id = "your-account-id-here"
+
+[env.production]
+name = "audio-to-midi"
+
+[env.staging] 
+name = "audio-to-midi-staging"
+
+# Configure static assets
+# The www directory contains our web interface files
+[[assets]]
+bucket = "./www"
+include = ["**/*"]
+exclude = []
+
+# Custom route patterns for serving static files
+[routes]
+pattern = "*audio-to-midi.contrapuntal.cc/*"
+zone_name = "contrapuntal.cc"
+
+# Build configuration
+[build]
+command = "npm run build"
+
+# Variables for the worker
+[vars]
+ENVIRONMENT = "production"

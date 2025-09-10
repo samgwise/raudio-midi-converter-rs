@@ -124,3 +124,14 @@ jspm_packages/
 
 # Local Netlify folder
 .netlify
+
+# Cloudflare Workers
+.wrangler/
+worker-configuration.d.ts
+.dev.vars
+.env.production
+.env.staging
+wrangler.toml.backup
+
+# Cloudflare KV/Durable Objects local data
+.mf/
