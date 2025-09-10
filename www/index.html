@@ -2,11 +2,11 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>CSV to MIDI Converter</title>
+    <title>Audio to MIDI Converter</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
             padding: 20px;
             background-color: #f5f5f5;
@@ -22,6 +22,36 @@
             text-align: center;
             margin-bottom: 30px;
         }
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+        .mode-button {
+            padding: 10px 20px;
+            border: 2px solid #007bff;
+            background: white;
+            color: #007bff;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .mode-button.active {
+            background: #007bff;
+            color: white;
+        }
+        .mode-button:hover {
+            background: #0056b3;
+            color: white;
+            border-color: #0056b3;
+        }
+        .processing-mode {
+            display: none;
+        }
+        .processing-mode.active {
+            display: block;
+        }
         .form-group {
             margin-bottom: 20px;
         }
@@ -31,7 +61,7 @@
             font-weight: bold;
             color: #555;
         }
-        textarea, input[type="file"], input[type="number"] {
+        textarea, input[type="file"], input[type="number"], input[type="range"] {
             width: 100%;
             padding: 10px;
             border: 2px solid #ddd;
@@ -47,6 +77,25 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 20px;
+        }
+        .audio-config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+        .range-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .range-container input[type="range"] {
+            flex: 1;
+        }
+        .range-value {
+            min-width: 60px;
+            text-align: center;
+            font-weight: bold;
+            color: #007bff;
         }
         button {
             background: #007bff;
@@ -81,6 +130,11 @@
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
         .download-link {
             display: inline-block;
             margin-top: 10px;
@@ -93,9 +147,6 @@
         .download-link:hover {
             background: #1e7e34;
         }
-        .sample-data {
-            margin-top: 10px;
-        }
         .sample-button {
             background: #6c757d;
             font-size: 14px;
@@ -105,28 +156,339 @@
         .sample-button:hover {
             background: #545b62;
         }
+        .audio-info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .audio-info h4 {
+            margin-top: 0;
+            color: #495057;
+        }
+        .audio-visualizer {
+            width: 100%;
+            height: 150px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #f8f9fa;
+            margin-top: 10px;
+        }
+        .processing-status {
+            text-align: center;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+            background: #e3f2fd;
+            color: #0d47a1;
+            display: none;
+        }
+        
+        /* Thinking Spinner */
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .processing-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .processing-modal {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-width: 300px;
+        }
+        
+        .big-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        .processing-text {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .processing-subtext {
+            font-size: 14px;
+            color: #666;
+            font-style: italic;
+        }
+        input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        small {
+            display: block;
+            color: #888;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        .form-group small {
+            color: #666;
+            font-style: italic;
+        }
+        .postprocessing-panel {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 4px solid #17a2b8;
+        }
+        .postprocess-section {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .postprocess-section:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        .postprocess-section > label {
+            font-weight: bold;
+            color: #495057;
+        }
+        .header-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .nav-links {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .nav-link {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 8px 12px;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .nav-link:hover {
+            background-color: #f8f9fa;
+            text-decoration: none;
+        }
+        .github-link {
+            background: #24292e;
+            color: white !important;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .github-link:hover {
+            background: #2f363e;
+            color: white !important;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>🎵 CSV to MIDI Converter</h1>
+        <div class="header-nav">
+            <h1>🎵 Audio to MIDI Converter</h1>
+            <div class="nav-links">
+                <a href="csv-demo.html" class="nav-link">📊 CSV Demo</a>
+                <a href="https://github.com/samgwise/raudio-midi-converter-rs" target="_blank" class="nav-link github-link">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+                    </svg>
+                    Source Code
+                </a>
+            </div>
+        </div>
         
-        <div class="form-group">
-            <label for="csv-input">CSV Audio Analysis Data:</label>
-            <textarea id="csv-input" placeholder="Paste your CSV data here, or use the file input below...&#10;&#10;Expected format:&#10;timestamp,frequency,amplitude,[channel]&#10;&#10;Example:&#10;0.241904762,440.0,0.5,[1]&#10;0.5,0,0.0&#10;1.0,880.0,0.7,[1]"></textarea>
-            
-            <div class="sample-data">
-                <button type="button" class="sample-button" onclick="loadSampleData()">Load Sample Data</button>
+        <div class="mode-selector">
+            <button class="mode-button" onclick="switchMode('csv')">CSV Processing</button>
+            <button class="mode-button active" onclick="switchMode('audio')">Audio Processing</button>
+        </div>
+
+        <!-- CSV Processing Mode -->
+        <div id="csv-mode" class="processing-mode">
+            <div class="form-group">
+                <label for="csv-input">CSV Audio Analysis Data:</label>
+                <textarea id="csv-input" placeholder="Paste your CSV data here, or use the file input below...&#10;&#10;Expected format:&#10;timestamp,frequency,amplitude,[channel]&#10;&#10;Example:&#10;0.241904762,440.0,0.5,[1]&#10;0.5,0,0.0&#10;1.0,880.0,0.7,[1]"></textarea>
+                
+                <div class="sample-data">
+                    <button type="button" class="sample-button" onclick="loadSampleData()">Load Sample Data</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="csv-file-input">Or upload a CSV file:</label>
+                <input type="file" id="csv-file-input" accept=".csv" onchange="handleCsvFileUpload(event)">
             </div>
         </div>
 
-        <div class="form-group">
-            <label for="file-input">Or upload a CSV file:</label>
-            <input type="file" id="file-input" accept=".csv" onchange="handleFileUpload(event)">
+        <!-- Audio Processing Mode -->
+        <div id="audio-mode" class="processing-mode active">
+            <div class="form-group">
+                <label for="audio-file-input">Select Audio File (WAV, MP3, M4A, etc.):</label>
+                <input type="file" id="audio-file-input" accept="audio/*" onchange="handleAudioFileUpload(event)">
+            </div>
+
+            <div id="audio-info" class="audio-info" style="display: none;">
+                <h4>Audio File Information</h4>
+                <div id="audio-details"></div>
+                <canvas id="audio-visualizer" class="audio-visualizer"></canvas>
+            </div>
+
+            <div class="form-group">
+                <label>Audio Analysis Settings:</label>
+                <div class="audio-config-grid">
+                    <div>
+                        <label for="min-freq">Min Frequency (Hz):</label>
+                        <div class="range-container">
+                            <input type="range" id="min-freq" min="50" max="1000" value="65" oninput="updateRangeValue('min-freq', this.value)">
+                            <span class="range-value" id="min-freq-value">65</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="max-freq">Max Frequency (Hz):</label>
+                        <div class="range-container">
+                            <input type="range" id="max-freq" min="500" max="4000" value="2093" oninput="updateRangeValue('max-freq', this.value)">
+                            <span class="range-value" id="max-freq-value">2093</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="threshold">Detection Threshold:</label>
+                        <div class="range-container">
+                            <input type="range" id="threshold" min="0" max="1" step="0.01" value="0.1" oninput="updateRangeValue('threshold', this.value)">
+                            <span class="range-value" id="threshold-value">0.10</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="frame-size">Frame Size:</label>
+                        <select id="frame-size" onchange="updateFrameSize()">
+                            <option value="1024">1024 samples</option>
+                            <option value="2048" selected>2048 samples</option>
+                            <option value="4096">4096 samples</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="hop-size">Hop Size:</label>
+                        <select id="hop-size" onchange="updateHopSize()">
+                            <option value="256">256 samples</option>
+                            <option value="512" selected>512 samples</option>
+                            <option value="1024">1024 samples</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-top: 20px;">
+                    <label>Pitch Detection Settings:</label>
+                    <div class="audio-config-grid" style="grid-template-columns: 1fr; gap: 15px;">
+                        <div style="background: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeaa7;">
+                            <strong>Note:</strong> The web version uses autocorrelation-based pitch detection. 
+                            The advanced pYIN algorithm is available in the CLI version for improved accuracy.
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-top: 20px;">
+                    <label>Advanced Analysis Options:</label>
+                    <div class="audio-config-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label><input type="checkbox" id="enable-spectral" checked> Spectral Analysis</label>
+                            <small>Brightness, rolloff frequency</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" id="enable-harmonicity" checked> Harmonicity Analysis</label>
+                            <small>Pitch clarity measure</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" id="enable-zero-crossing" checked> Zero Crossing Rate</label>
+                            <small>Noisiness measure</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" id="enable-peak-normalization" checked> Peak Normalization</label>
+                            <small>Normalize audio level</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-top: 20px;">
+                    <label>MIDI Controller (CC) Assignments:</label>
+                    <div class="audio-config-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label for="cc-pitch-contour">Pitch Contour CC:</label>
+                            <input type="number" id="cc-pitch-contour" value="100" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-amplitude">Amplitude CC:</label>
+                            <input type="number" id="cc-amplitude" value="101" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-spectral-centroid">Spectral Centroid CC:</label>
+                            <input type="number" id="cc-spectral-centroid" value="102" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-harmonicity">Harmonicity CC:</label>
+                            <input type="number" id="cc-harmonicity" value="103" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-spectral-rolloff">Spectral Rolloff CC:</label>
+                            <input type="number" id="cc-spectral-rolloff" value="104" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-zero-crossing">Zero Crossing CC:</label>
+                            <input type="number" id="cc-zero-crossing" value="105" min="1" max="127">
+                        </div>
+                    </div>
+                    <small style="display: block; margin-top: 10px; color: #666;">
+                        <em>Set to 0 to disable a specific CC channel. Valid range: 1-127.</em>
+                    </small>
+                </div>
+                
+                <div class="audio-info" style="margin-top: 15px;">
+                    <h4>📊 MIDI Controller Data</h4>
+                    <p><strong>CC 100 - Pitch Contour:</strong> Fine pitch variations and microtonal details<br>
+                    <strong>CC 101 - Amplitude:</strong> Real-time volume/loudness changes<br>
+                    <strong>CC 102 - Spectral Centroid:</strong> Brightness/timbre measure<br>
+                    <strong>CC 103 - Harmonicity:</strong> Pitch clarity (harmonic vs noise)<br>
+                    <strong>CC 104 - Spectral Rolloff:</strong> High-frequency energy distribution<br>
+                    <strong>CC 105 - Zero Crossing Rate:</strong> Measure of noisiness/texture</p>
+                    <p><em>Advanced CC events provide detailed spectral expression data beyond basic pitch and amplitude.</em></p>
+                </div>
+            </div>
         </div>
 
+        <!-- Common MIDI Settings -->
         <div class="form-group">
-            <label>Conversion Settings:</label>
+            <label>MIDI Conversion Settings:</label>
             <div class="config-grid">
                 <div>
                     <label for="ticks">Ticks per Quarter Note:</label>
@@ -147,21 +509,128 @@
             </div>
         </div>
 
-        <button onclick="convertToMidi()" id="convert-button">Convert to MIDI</button>
+        <!-- Post-Processing Settings -->
+        <div class="form-group">
+            <label>🔧 MIDI Post-Processing Settings:</label>
+            <div class="form-group" style="margin-top: 10px;">
+                <label><input type="checkbox" id="enable-postprocessing" checked onchange="togglePostProcessing()"> Enable Post-Processing</label>
+                <small>Clean up and simplify MIDI output for better playback</small>
+            </div>
+            
+            <div id="postprocessing-options" class="postprocessing-panel">
+                <!-- Pitch Filtering -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-pitch-filter"> Pitch Range Filter</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="min-pitch-note">Min MIDI Note:</label>
+                            <input type="number" id="min-pitch-note" value="21" min="0" max="127">
+                            <small>21 = A0</small>
+                        </div>
+                        <div>
+                            <label for="max-pitch-note">Max MIDI Note:</label>
+                            <input type="number" id="max-pitch-note" value="108" min="0" max="127">
+                            <small>108 = C8</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Velocity Expansion -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-velocity-expand"> Velocity Expansion</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="velocity-expand-threshold">Threshold:</label>
+                            <input type="number" id="velocity-expand-threshold" value="40" min="1" max="127">
+                            <small>Expand notes below this velocity</small>
+                        </div>
+                        <div>
+                            <label for="velocity-expand-factor">Factor:</label>
+                            <input type="number" id="velocity-expand-factor" value="1.5" min="1.0" max="3.0" step="0.1">
+                            <small>Multiplication factor</small>
+                        </div>
+                        <div>
+                            <label for="velocity-expand-max">Max Velocity:</label>
+                            <input type="number" id="velocity-expand-max" value="100" min="64" max="127">
+                            <small>Maximum after expansion</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Note Joining -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-note-joining" checked> Note Joining & Cleanup</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="max-join-gap">Max Join Gap (ticks):</label>
+                            <input type="number" id="max-join-gap" value="24" min="0" max="100">
+                            <small>Join notes within this gap</small>
+                        </div>
+                        <div>
+                            <label for="remove-short-threshold">Remove Short Notes (ticks):</label>
+                            <input type="number" id="remove-short-threshold" value="12" min="0" max="50">
+                            <small>Remove notes shorter than this</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- CC Simplification -->
+                <div class="postprocess-section">
+                    <label><input type="checkbox" id="enable-cc-simplify" checked> CC Event Simplification</label>
+                    <div class="config-grid" style="grid-template-columns: 1fr 1fr; margin-top: 5px;">
+                        <div>
+                            <label for="cc-min-change">Min CC Change:</label>
+                            <input type="number" id="cc-min-change" value="2" min="1" max="10">
+                            <small>Minimum value change to keep</small>
+                        </div>
+                        <div>
+                            <label for="cc-max-rate">Max Events/Second:</label>
+                            <input type="number" id="cc-max-rate" value="20" min="5" max="100">
+                            <small>Maximum CC events per second</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="processing-status" id="processing-status">
+            <span class="spinner"></span>Processing audio... This may take a moment.
+        </div>
+
+        <button onclick="convertToMidi()" id="convert-button" disabled>Convert to MIDI</button>
 
         <div id="result"></div>
+    </div>
+
+    <!-- Processing Overlay -->
+    <div id="processing-overlay" class="processing-overlay">
+        <div class="processing-modal">
+            <div class="big-spinner"></div>
+            <div class="processing-text" id="processing-text">Processing...</div>
+            <div class="processing-subtext" id="processing-subtext">Analyzing audio and generating MIDI file</div>
+        </div>
     </div>
 
     <script type="module">
         import init, { 
             convert_csv_to_midi_wasm, 
+            process_audio_to_midi,
             WasmConversionConfig,
+            WasmAudioConfig,
+            WasmCCMapping,
+            WasmPostProcessingConfig,
             create_default_config,
+            create_default_audio_config,
+            create_default_cc_mapping,
+            create_default_postprocessing_config,
             get_version,
             init_panic_hook
         } from './pkg/csv_to_midi_wasm.js';
 
         let wasm;
+        let currentMode = 'audio';
+        let audioBuffer = null;
+        let audioContext = null;
 
         async function run() {
             wasm = await init();
@@ -169,83 +638,389 @@
             
             console.log('CSV to MIDI WASM library loaded, version:', get_version());
             document.getElementById('convert-button').disabled = false;
+            
+            // Set default button text for audio mode
+            document.getElementById('convert-button').textContent = 'Analyze Audio & Convert to MIDI';
+            
+            // Initialize post-processing panel visibility
+            togglePostProcessing();
+            
+            // Initialize audio context
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn('Web Audio API not supported:', e);
+            }
+        }
+
+        window.switchMode = function(mode) {
+            currentMode = mode;
+            
+            // Update button states
+            document.querySelectorAll('.mode-button').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update mode displays
+            document.querySelectorAll('.processing-mode').forEach(div => div.classList.remove('active'));
+            document.getElementById(mode + '-mode').classList.add('active');
+            
+            // Update convert button text
+            const convertBtn = document.getElementById('convert-button');
+            if (mode === 'audio') {
+                convertBtn.textContent = 'Analyze Audio & Convert to MIDI';
+            } else {
+                convertBtn.textContent = 'Convert to MIDI';
+            }
+        };
+
+        window.updateRangeValue = function(id, value) {
+            const display = document.getElementById(id + '-value');
+            if (id === 'threshold') {
+                display.textContent = parseFloat(value).toFixed(2);
+            } else {
+                display.textContent = value;
+            }
+        };
+
+        window.updateFrameSize = function() {
+            console.log('Frame size updated to:', document.getElementById('frame-size').value);
+        };
+
+        window.updateHopSize = function() {
+            console.log('Hop size updated to:', document.getElementById('hop-size').value);
+        };
+        
+        window.togglePostProcessing = function() {
+            const enabled = document.getElementById('enable-postprocessing').checked;
+            const optionsPanel = document.getElementById('postprocessing-options');
+            optionsPanel.style.display = enabled ? 'block' : 'none';
+        };
+        
+        function createPostProcessingConfig() {
+            if (!document.getElementById('enable-postprocessing').checked) {
+                return null;
+            }
+            
+            return new WasmPostProcessingConfig(
+                // Pitch filtering
+                document.getElementById('enable-pitch-filter').checked,
+                parseInt(document.getElementById('min-pitch-note').value),
+                parseInt(document.getElementById('max-pitch-note').value),
+                
+                // Velocity expansion
+                document.getElementById('enable-velocity-expand').checked,
+                parseInt(document.getElementById('velocity-expand-threshold').value),
+                parseFloat(document.getElementById('velocity-expand-factor').value),
+                parseInt(document.getElementById('velocity-expand-max').value),
+                
+                // Note joining
+                document.getElementById('enable-note-joining').checked,
+                parseInt(document.getElementById('duration').value), // Use min note duration
+                parseInt(document.getElementById('max-join-gap').value),
+                parseInt(document.getElementById('remove-short-threshold').value),
+                
+                // Duplicate removal (always enabled)
+                true,
+                12, // duplicate time window
+                
+                // CC simplification
+                document.getElementById('enable-cc-simplify').checked,
+                parseInt(document.getElementById('cc-min-change').value),
+                parseFloat(document.getElementById('cc-max-rate').value)
+            );
+        }
+        
+        function showProcessingOverlay(text, subtext) {
+            const overlay = document.getElementById('processing-overlay');
+            const textElement = document.getElementById('processing-text');
+            const subtextElement = document.getElementById('processing-subtext');
+            
+            textElement.textContent = text || 'Processing...';
+            subtextElement.textContent = subtext || 'Please wait while we process your request';
+            
+            overlay.style.display = 'flex';
+        }
+        
+        function hideProcessingOverlay() {
+            const overlay = document.getElementById('processing-overlay');
+            overlay.style.display = 'none';
+        }
+
+        window.handleCsvFileUpload = function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('csv-input').value = e.target.result;
+            };
+            reader.readAsText(file);
+        };
+
+        window.handleAudioFileUpload = async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!audioContext) {
+                showResult('Web Audio API is not supported in this browser.', 'error');
+                return;
+            }
+
+            try {
+                showResult('Loading audio file...', 'warning');
+                
+                const arrayBuffer = await file.arrayBuffer();
+                audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                // Display audio info
+                const audioInfo = document.getElementById('audio-info');
+                const audioDetails = document.getElementById('audio-details');
+                
+                audioDetails.innerHTML = `
+                    <strong>File:</strong> ${file.name}<br>
+                    <strong>Duration:</strong> ${audioBuffer.duration.toFixed(2)} seconds<br>
+                    <strong>Sample Rate:</strong> ${audioBuffer.sampleRate} Hz<br>
+                    <strong>Channels:</strong> ${audioBuffer.numberOfChannels}<br>
+                    <strong>Total Samples:</strong> ${audioBuffer.length.toLocaleString()}
+                `;
+                
+                audioInfo.style.display = 'block';
+                
+                // Draw waveform visualization
+                drawWaveform(audioBuffer);
+                
+                showResult('Audio file loaded successfully! Ready for processing.', 'success');
+                
+            } catch (error) {
+                showResult(`Failed to load audio file: ${error.message}`, 'error');
+                console.error('Audio loading error:', error);
+            }
+        };
+
+        function drawWaveform(buffer) {
+            const canvas = document.getElementById('audio-visualizer');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+            
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            // Clear canvas
+            ctx.fillStyle = '#f8f9fa';
+            ctx.fillRect(0, 0, width, height);
+            
+            // Get audio data (mix down to mono if stereo)
+            const data = buffer.getChannelData(0);
+            const step = Math.ceil(data.length / width);
+            const amp = height / 2;
+            
+            // Draw waveform
+            ctx.strokeStyle = '#007bff';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            for (let i = 0; i < width; i++) {
+                const min = Math.min(...Array.from(data.slice(i * step, (i + 1) * step)));
+                const max = Math.max(...Array.from(data.slice(i * step, (i + 1) * step)));
+                
+                ctx.moveTo(i, (1 + min) * amp);
+                ctx.lineTo(i, (1 + max) * amp);
+            }
+            
+            ctx.stroke();
         }
 
         window.convertToMidi = async function() {
-            const csvInput = document.getElementById('csv-input');
             const resultDiv = document.getElementById('result');
             const convertButton = document.getElementById('convert-button');
-            
-            const csvData = csvInput.value.trim();
-            if (!csvData) {
-                resultDiv.innerHTML = '<div class="error">Please enter CSV data or upload a file.</div>';
-                return;
-            }
+            const statusDiv = document.getElementById('processing-status');
             
             convertButton.disabled = true;
-            convertButton.textContent = 'Converting...';
+            convertButton.innerHTML = '<span class="spinner"></span>Converting...';
             
             try {
-                // Get configuration values
-                const config = new WasmConversionConfig(
-                    parseInt(document.getElementById('ticks').value),
-                    parseInt(document.getElementById('duration').value),
-                    parseInt(document.getElementById('velocity').value),
-                    parseInt(document.getElementById('octave').value)
-                );
+                let midiArray;
                 
-                // Convert CSV to MIDI
-                const midiArray = convert_csv_to_midi_wasm(csvData, config);
+                if (currentMode === 'csv') {
+                    const csvInput = document.getElementById('csv-input');
+                    const csvData = csvInput.value.trim();
+                    
+                    if (!csvData) {
+                        showResult('Please enter CSV data or upload a file.', 'error');
+                        return;
+                    }
+                    
+                    // Show processing spinner
+                    showProcessingOverlay('Converting CSV to MIDI...', 'Processing CSV data and generating MIDI file');
+                    
+                    // Get configuration values
+                    const config = new WasmConversionConfig(
+                        parseInt(document.getElementById('ticks').value),
+                        parseInt(document.getElementById('duration').value),
+                        parseInt(document.getElementById('velocity').value),
+                        parseInt(document.getElementById('octave').value)
+                    );
+                    
+                    // Get post-processing configuration
+                    const postprocessConfig = createPostProcessingConfig();
+                    
+                    // Use setTimeout to allow UI update before processing
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    
+                    // Convert CSV to MIDI with post-processing
+                    midiArray = convert_csv_to_midi_wasm(csvData, config, postprocessConfig);
+                    
+                } else if (currentMode === 'audio') {
+                    if (!audioBuffer) {
+                        showResult('Please select an audio file first.', 'error');
+                        return;
+                    }
+                    
+                    // Show processing spinner
+                    showProcessingOverlay('Analyzing Audio...', 'Extracting pitch and spectral features from audio data');
+                    
+                    statusDiv.style.display = 'block';
+                    
+                    // Get audio samples (mix down to mono if stereo)
+                    const samples = audioBuffer.getChannelData(0);
+                    
+                    // Get advanced analysis options
+                    const enableSpectral = document.getElementById('enable-spectral').checked;
+                    const enableHarmonicity = document.getElementById('enable-harmonicity').checked;
+                    const enableZeroCrossing = document.getElementById('enable-zero-crossing').checked;
+                    const enablePeakNorm = document.getElementById('enable-peak-normalization').checked;
+                    
+                    // Get CC assignments (convert 0 to null for disabled channels)
+                    const getCCValue = (id) => {
+                        const value = parseInt(document.getElementById(id).value);
+                        return (value > 0 && value <= 127) ? value : null;
+                    };
+                    
+                    const ccMapping = new WasmCCMapping(
+                        getCCValue('cc-pitch-contour'),
+                        getCCValue('cc-amplitude'),
+                        enableSpectral ? getCCValue('cc-spectral-centroid') : null,
+                        enableHarmonicity ? getCCValue('cc-harmonicity') : null,
+                        enableSpectral ? getCCValue('cc-spectral-rolloff') : null,
+                        enableZeroCrossing ? getCCValue('cc-zero-crossing') : null
+                    );
+                    
+                    // Get enhanced audio configuration
+                    const audioConfig = new WasmAudioConfig(
+                        audioBuffer.sampleRate,
+                        parseInt(document.getElementById('frame-size').value),
+                        parseInt(document.getElementById('hop-size').value),
+                        parseFloat(document.getElementById('min-freq').value),
+                        parseFloat(document.getElementById('max-freq').value),
+                        parseFloat(document.getElementById('threshold').value),
+                        enableSpectral,
+                        enableHarmonicity,
+                        enableZeroCrossing,
+                        enablePeakNorm,
+                        0.95 // normalization target
+                    );
+                    
+                    const midiConfig = new WasmConversionConfig(
+                        parseInt(document.getElementById('ticks').value),
+                        parseInt(document.getElementById('duration').value),
+                        parseInt(document.getElementById('velocity').value),
+                        parseInt(document.getElementById('octave').value)
+                    );
+                    
+                    // Get post-processing configuration
+                    const postprocessConfig = createPostProcessingConfig();
+                    
+                    // Use setTimeout to allow UI update before heavy processing
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                    
+                    // Update spinner message for MIDI conversion phase
+                    showProcessingOverlay('Converting to MIDI...', 'Generating MIDI events with CC data and post-processing');
+                    
+                    // Process audio and convert to MIDI with enhanced analysis and post-processing
+                    midiArray = process_audio_to_midi(samples, audioConfig, ccMapping, midiConfig, postprocessConfig);
+                    
+                    statusDiv.style.display = 'none';
+                }
+                
+                // Create download link
                 const midiBlob = new Blob([midiArray], { type: 'audio/midi' });
                 const downloadUrl = URL.createObjectURL(midiBlob);
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-');
+                const filename = `${currentMode}-to-midi-${timestamp}.mid`;
                 
-                resultDiv.innerHTML = `
-                    <div class="success">
-                        <strong>Success!</strong> Converted CSV data to MIDI file.
-                        <br>File size: ${midiArray.length} bytes
-                        <br><a href="${downloadUrl}" download="converted.mid" class="download-link">Download MIDI File</a>
-                    </div>
-                `;
+                let ccInfo = '';
+                if (currentMode === 'audio') {
+                    // Generate dynamic CC information based on enabled features and assignments
+                    const ccList = [];
+                    const getCCValue = (id) => {
+                        const value = parseInt(document.getElementById(id).value);
+                        return (value > 0 && value <= 127) ? value : null;
+                    };
+                    
+                    const pitchCC = getCCValue('cc-pitch-contour');
+                    const ampCC = getCCValue('cc-amplitude');
+                    const centroidCC = document.getElementById('enable-spectral').checked ? getCCValue('cc-spectral-centroid') : null;
+                    const harmonicityCC = document.getElementById('enable-harmonicity').checked ? getCCValue('cc-harmonicity') : null;
+                    const rolloffCC = document.getElementById('enable-spectral').checked ? getCCValue('cc-spectral-rolloff') : null;
+                    const zcrCC = document.getElementById('enable-zero-crossing').checked ? getCCValue('cc-zero-crossing') : null;
+                    
+                    if (pitchCC) ccList.push(`CC${pitchCC} (Pitch Contour)`);
+                    if (ampCC) ccList.push(`CC${ampCC} (Amplitude)`);
+                    if (centroidCC) ccList.push(`CC${centroidCC} (Spectral Centroid)`);
+                    if (harmonicityCC) ccList.push(`CC${harmonicityCC} (Harmonicity)`);
+                    if (rolloffCC) ccList.push(`CC${rolloffCC} (Spectral Rolloff)`);
+                    if (zcrCC) ccList.push(`CC${zcrCC} (Zero Crossing Rate)`);
+                    
+                    if (ccList.length > 0) {
+                        ccInfo = '<br><strong>Includes CC Data:</strong> ' + ccList.join(', ');
+                    }
+                }
                 
-                console.log('Conversion successful, generated', midiArray.length, 'bytes');
+                showResult(`
+                    <strong>Conversion successful!</strong><br>
+                    Generated MIDI file: ${midiArray.length} bytes${ccInfo}<br>
+                    <a href="${downloadUrl}" download="${filename}" class="download-link">
+                        📥 Download ${filename}
+                    </a>
+                `, 'success');
                 
             } catch (error) {
-                resultDiv.innerHTML = `<div class="error"><strong>Error:</strong> ${error}</div>`;
-                console.error('Conversion failed:', error);
+                showResult(`Conversion failed: ${error.message}`, 'error');
+                console.error('Conversion error:', error);
             } finally {
+                // Hide processing overlay
+                hideProcessingOverlay();
+                
+                // Restore button state
                 convertButton.disabled = false;
-                convertButton.textContent = 'Convert to MIDI';
+                convertButton.textContent = currentMode === 'audio' ? 'Analyze Audio & Convert to MIDI' : 'Convert to MIDI';
+                statusDiv.style.display = 'none';
             }
         };
 
-        window.handleFileUpload = function(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    document.getElementById('csv-input').value = e.target.result;
-                };
-                reader.readAsText(file);
-            }
-        };
+        function showResult(message, type) {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
 
         window.loadSampleData = function() {
             const sampleData = `0.241904762,0.618992,0.305124717,[2]
 0.241904762,2793.83,0.305124717,[1]
 0.547052154,0,0.000000000
-1.367097506,0.547927,0.133492063,[2]
-1.367097506,2793.83,0.133492063,[1]
-1.500589569,0,0.000000000
-4.037006803,0.481559,0.152562358,[2]
-4.037006803,2793.83,0.152562358,[1]
-4.189569161,0,0.000000000`;
+0.852381078,1396.91,0.305124717,[1]
+1.157709251,0,0.000000000
+1.463038095,698.456,0.152562359,[2]
+1.768367347,0,0.000000000
+2.073696599,349.228,0.076281179,[1]`;
+            
             document.getElementById('csv-input').value = sampleData;
         };
 
+        // Initialize when page loads
         run();
-        
-        // Initially disable the convert button until WASM is loaded
-        document.getElementById('convert-button').disabled = true;
     </script>
 </body>
 </html>

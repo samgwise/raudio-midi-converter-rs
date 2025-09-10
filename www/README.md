@@ -4,8 +4,8 @@ This directory contains the web-based interface for the CSV to MIDI converter.
 
 ## Files
 
-- **`index.html`** - Original CSV-only processing interface
-- **`audio-demo.html`** - Enhanced interface with both CSV and audio processing capabilities
+- **`index.html`** - Main audio-to-MIDI converter with both audio and CSV processing
+- **`csv-demo.html`** - CSV-only processing interface
 - **`pkg/`** - Generated WebAssembly module and JavaScript bindings
 - **`README.md`** - This file
 
@@ -17,7 +17,7 @@ This directory contains the web-based interface for the CSV to MIDI converter.
 - Configurable MIDI parameters (velocity, timing, etc.)
 - Instant download of generated MIDI files
 
-### Audio Processing Mode (audio-demo.html only)
+### Audio Processing Mode (default)
 - Upload audio files (WAV, MP3, M4A, etc.)
 - Real-time audio waveform visualization
 - Configurable pitch detection parameters:
@@ -45,8 +45,8 @@ This directory contains the web-based interface for the CSV to MIDI converter.
    ```
 
 2. **Open your browser** and navigate to:
-   - `http://localhost:8000/index.html` - CSV-only interface
-   - `http://localhost:8000/audio-demo.html` - Full audio demo interface
+   - `http://localhost:8000/` - Main audio-to-MIDI interface
+   - `http://localhost:8000/csv-demo.html` - CSV-only interface
 
 ## Browser Compatibility
 

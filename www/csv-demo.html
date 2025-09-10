@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>CSV to MIDI Converter</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea, input[type="file"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 200px;
+            resize: vertical;
+            font-family: monospace;
+        }
+        .config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .download-link {
+            display: inline-block;
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 3px;
+        }
+        .download-link:hover {
+            background: #1e7e34;
+        }
+        .sample-data {
+            margin-top: 10px;
+        }
+        .sample-button {
+            background: #6c757d;
+            font-size: 14px;
+            padding: 8px 16px;
+            margin-top: 10px;
+        }
+        .sample-button:hover {
+            background: #545b62;
+        }
+        .header-nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .nav-links {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .nav-link {
+            color: #007bff;
+            text-decoration: none;
+            font-weight: 500;
+            padding: 8px 12px;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        .nav-link:hover {
+            background-color: #f8f9fa;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-nav">
+            <h1>🎵 CSV to MIDI Converter</h1>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link">🎧 Audio Converter</a>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="csv-input">CSV Audio Analysis Data:</label>
+            <textarea id="csv-input" placeholder="Paste your CSV data here, or use the file input below...&#10;&#10;Expected format:&#10;timestamp,frequency,amplitude,[channel]&#10;&#10;Example:&#10;0.241904762,440.0,0.5,[1]&#10;0.5,0,0.0&#10;1.0,880.0,0.7,[1]"></textarea>
+            
+            <div class="sample-data">
+                <button type="button" class="sample-button" onclick="loadSampleData()">Load Sample Data</button>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="file-input">Or upload a CSV file:</label>
+            <input type="file" id="file-input" accept=".csv" onchange="handleFileUpload(event)">
+        </div>
+
+        <div class="form-group">
+            <label>Conversion Settings:</label>
+            <div class="config-grid">
+                <div>
+                    <label for="ticks">Ticks per Quarter Note:</label>
+                    <input type="number" id="ticks" value="480" min="1" max="960">
+                </div>
+                <div>
+                    <label for="velocity">Default Velocity (0-127):</label>
+                    <input type="number" id="velocity" value="64" min="0" max="127">
+                </div>
+                <div>
+                    <label for="duration">Min Note Duration (ticks):</label>
+                    <input type="number" id="duration" value="100" min="1" max="1000">
+                </div>
+                <div>
+                    <label for="octave">Base Octave:</label>
+                    <input type="number" id="octave" value="4" min="0" max="8">
+                </div>
+            </div>
+        </div>
+
+        <button onclick="convertToMidi()" id="convert-button">Convert to MIDI</button>
+
+        <div id="result"></div>
+    </div>
+
+    <script type="module">
+        import init, { 
+            convert_csv_to_midi_wasm, 
+            WasmConversionConfig,
+            create_default_config,
+            get_version,
+            init_panic_hook
+        } from './pkg/csv_to_midi_wasm.js';
+
+        let wasm;
+
+        async function run() {
+            wasm = await init();
+            init_panic_hook();
+            
+            console.log('CSV to MIDI WASM library loaded, version:', get_version());
+            document.getElementById('convert-button').disabled = false;
+        }
+
+        window.convertToMidi = async function() {
+            const csvInput = document.getElementById('csv-input');
+            const resultDiv = document.getElementById('result');
+            const convertButton = document.getElementById('convert-button');
+            
+            const csvData = csvInput.value.trim();
+            if (!csvData) {
+                resultDiv.innerHTML = '<div class="error">Please enter CSV data or upload a file.</div>';
+                return;
+            }
+            
+            convertButton.disabled = true;
+            convertButton.textContent = 'Converting...';
+            
+            try {
+                // Get configuration values
+                const config = new WasmConversionConfig(
+                    parseInt(document.getElementById('ticks').value),
+                    parseInt(document.getElementById('duration').value),
+                    parseInt(document.getElementById('velocity').value),
+                    parseInt(document.getElementById('octave').value)
+                );
+                
+                // Convert CSV to MIDI
+                const midiArray = convert_csv_to_midi_wasm(csvData, config);
+                const midiBlob = new Blob([midiArray], { type: 'audio/midi' });
+                const downloadUrl = URL.createObjectURL(midiBlob);
+                
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <strong>Success!</strong> Converted CSV data to MIDI file.
+                        <br>File size: ${midiArray.length} bytes
+                        <br><a href="${downloadUrl}" download="converted.mid" class="download-link">Download MIDI File</a>
+                    </div>
+                `;
+                
+                console.log('Conversion successful, generated', midiArray.length, 'bytes');
+                
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error"><strong>Error:</strong> ${error}</div>`;
+                console.error('Conversion failed:', error);
+            } finally {
+                convertButton.disabled = false;
+                convertButton.textContent = 'Convert to MIDI';
+            }
+        };
+
+        window.handleFileUpload = function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('csv-input').value = e.target.result;
+                };
+                reader.readAsText(file);
+            }
+        };
+
+        window.loadSampleData = function() {
+            const sampleData = `0.241904762,0.618992,0.305124717,[2]
+0.241904762,2793.83,0.305124717,[1]
+0.547052154,0,0.000000000
+1.367097506,0.547927,0.133492063,[2]
+1.367097506,2793.83,0.133492063,[1]
+1.500589569,0,0.000000000
+4.037006803,0.481559,0.152562358,[2]
+4.037006803,2793.83,0.152562358,[1]
+4.189569161,0,0.000000000`;
+            document.getElementById('csv-input').value = sampleData;
+        };
+
+        run();
+        
+        // Initially disable the convert button until WASM is loaded
+        document.getElementById('convert-button').disabled = true;
+    </script>
+</body>
+</html>

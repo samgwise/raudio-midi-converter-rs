@@ -204,8 +204,8 @@ The web interface requires `wasm-pack` to build the WebAssembly module.
    ```
 
 4. **Open your browser to:**
-   - `http://localhost:8000/index.html` - CSV processing interface
-   - `http://localhost:8000/audio-demo.html` - Enhanced interface with audio processing
+   - `http://localhost:8000/` - Main audio processing interface
+   - `http://localhost:8000/csv-demo.html` - CSV-only processing interface
 
 ### Cloudflare Workers Deployment
 
