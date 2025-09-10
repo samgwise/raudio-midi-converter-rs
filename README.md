@@ -76,21 +76,50 @@ The `www/audio-demo.html` interface provides a complete browser-based audio proc
 
 This makes it easy to experiment with different audio files and settings without needing to install the CLI tools.
 
-### MIDI Controller (CC) Enhancement
+### Enhanced MIDI Controller (CC) Features
 
-When processing audio files, the system now generates enhanced MIDI output with Control Change (CC) events:
+When processing audio files, the system now generates comprehensive MIDI output with **configurable Control Change (CC) events**:
 
-- **CC 100 - Pitch Contour**: Captures fine pitch variations and microtonal details
+#### Core Audio Features
+- **CC 100 - Pitch Contour** *(configurable)*: Captures fine pitch variations and microtonal details
   - Maps fractional semitone deviations to CC values (0-127)
   - Center value (64) = perfectly on pitch
   - Provides expressive pitch bend information beyond basic note quantization
 
-- **CC 101 - Amplitude**: Real-time amplitude/volume envelope
+- **CC 101 - Amplitude** *(configurable)*: Real-time amplitude/volume envelope
   - Maps audio amplitude (0.0-1.0) to CC values (0-127)
   - Provides detailed dynamics information for each detected note
   - Enables more expressive MIDI playback with volume automation
 
-These CC events work alongside traditional note on/off messages to provide a much more expressive and detailed MIDI representation of the original audio.
+#### Advanced Spectral Analysis Features
+- **CC 102 - Spectral Centroid** *(configurable)*: **"Brightness"** measure
+  - Frequency-weighted center of the spectrum (Hz)
+  - Higher values = brighter, more treble-heavy sound
+  - Useful for controlling filter cutoff or tone color
+
+- **CC 103 - Harmonicity** *(configurable)*: **Pitch clarity** measure
+  - Harmonic-to-noise ratio (0.0-1.0 → 0-127)
+  - Higher values = more pitched/tonal sound
+  - Lower values = more noisy/percussive sound
+
+- **CC 104 - Spectral Rolloff** *(configurable)*: **Frequency distribution** measure
+  - Frequency below which 85% of energy is contained
+  - Indicates the "edge" of the spectral envelope
+  - Useful for controlling resonance or formant filters
+
+- **CC 105 - Zero Crossing Rate** *(configurable)*: **Noisiness** measure
+  - Rate of signal polarity changes (0.0-1.0 → 0-127)
+  - Higher values = more noise-like content
+  - Useful for controlling distortion or noise parameters
+
+#### Configurable CC Mapping
+All CC assignments are **fully configurable**:
+- Enable/disable individual analysis features
+- Assign any CC number (0-127) to any parameter
+- Set CC assignments to `None` to disable specific outputs
+- Default assignments can be overridden via configuration
+
+This comprehensive CC system provides professional-grade MIDI data suitable for advanced music production, sound design, and audio analysis applications.
 
 ## Installation & Usage
 

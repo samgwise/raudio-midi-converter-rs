@@ -10,17 +10,48 @@ use std::path::Path;
 #[cfg(feature = "audio")]
 use {
     hound::{WavReader, SampleFormat},
-    rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction}
+    rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction},
+    rustfft::{FftPlanner, num_complex::Complex},
 };
+
+/// MIDI Controller Change mapping configuration
+#[derive(Debug, Clone)]
+pub struct CCMappingConfig {
+    /// CC number for pitch contour (fine pitch variations)
+    pub pitch_contour_cc: Option<u8>,
+    /// CC number for amplitude/volume envelope
+    pub amplitude_cc: Option<u8>,
+    /// CC number for spectral centroid (brightness)
+    pub spectral_centroid_cc: Option<u8>,
+    /// CC number for harmonicity (pitch clarity)
+    pub harmonicity_cc: Option<u8>,
+    /// CC number for spectral rolloff (frequency distribution)
+    pub spectral_rolloff_cc: Option<u8>,
+    /// CC number for zero crossing rate (noisiness)
+    pub zero_crossing_rate_cc: Option<u8>,
+}
+
+impl Default for CCMappingConfig {
+    fn default() -> Self {
+        Self {
+            pitch_contour_cc: Some(100),     // CC 100: Pitch contour
+            amplitude_cc: Some(101),         // CC 101: Amplitude
+            spectral_centroid_cc: Some(102), // CC 102: Spectral centroid (brightness)
+            harmonicity_cc: Some(103),      // CC 103: Harmonicity (pitch clarity)
+            spectral_rolloff_cc: Some(104), // CC 104: Spectral rolloff
+            zero_crossing_rate_cc: Some(105), // CC 105: Zero crossing rate
+        }
+    }
+}
 
 /// Configuration specific to audio analysis
 #[derive(Debug, Clone)]
 pub struct AudioAnalysisConfig {
-    /// Sample rate for analysis (PYIN works best at 44.1kHz)
+    /// Sample rate for analysis (works best at 44.1kHz)
     pub target_sample_rate: u32,
-    /// Frame size for PYIN analysis in samples
+    /// Frame size for analysis in samples
     pub frame_size: usize,
-    /// Hop size for PYIN analysis in samples (frame overlap)
+    /// Hop size for analysis in samples (frame overlap)
     pub hop_size: usize,
     /// Minimum frequency to detect in Hz
     pub fmin: f64,
@@ -28,6 +59,18 @@ pub struct AudioAnalysisConfig {
     pub fmax: f64,
     /// Threshold for voiced/unvoiced detection (0.0-1.0)
     pub threshold: f64,
+    /// CC mapping configuration
+    pub cc_mapping: CCMappingConfig,
+    /// Enable advanced spectral analysis (spectral centroid, rolloff, etc.)
+    pub enable_spectral_analysis: bool,
+    /// Enable harmonicity analysis (pitch clarity measure)
+    pub enable_harmonicity_analysis: bool,
+    /// Enable zero crossing rate analysis (noisiness measure)
+    pub enable_zero_crossing_analysis: bool,
+    /// Enable peak normalization before analysis (default: true)
+    pub enable_peak_normalization: bool,
+    /// Peak normalization target level (0.0-1.0, default: 0.95)
+    pub normalization_target: f32,
 }
 
 impl Default for AudioAnalysisConfig {
@@ -38,7 +81,13 @@ impl Default for AudioAnalysisConfig {
             hop_size: 512,  // 25% overlap
             fmin: 65.0,     // C2
             fmax: 2093.0,   // C7
-            threshold: 0.1, // PYIN default
+            threshold: 0.1, // Default threshold
+            cc_mapping: CCMappingConfig::default(),
+            enable_spectral_analysis: true,
+            enable_harmonicity_analysis: true,
+            enable_zero_crossing_analysis: true,
+            enable_peak_normalization: true,
+            normalization_target: 0.95, // Leave some headroom
         }
     }
 }
@@ -54,7 +103,7 @@ pub struct PitchAnalysisResult {
     pub duration: f64,
 }
 
-/// A single pitch detection event
+/// A single pitch detection event with extended analysis data
 #[derive(Debug, Clone)]
 pub struct PitchEvent {
     /// Time offset in seconds
@@ -65,6 +114,14 @@ pub struct PitchEvent {
     pub confidence: f64,
     /// Whether this frame is considered voiced
     pub voiced: bool,
+    /// Spectral centroid (brightness measure in Hz)
+    pub spectral_centroid: Option<f64>,
+    /// Harmonicity (pitch clarity measure 0.0-1.0)
+    pub harmonicity: Option<f64>,
+    /// Spectral rolloff frequency (Hz)
+    pub spectral_rolloff: Option<f64>,
+    /// Zero crossing rate (measure of noisiness)
+    pub zero_crossing_rate: Option<f64>,
 }
 
 impl From<PitchEvent> for AudioEvent {
@@ -75,6 +132,30 @@ impl From<PitchEvent> for AudioEvent {
             frequency: if pitch_event.voiced { pitch_event.frequency } else { 0.0 },
             amplitude: pitch_event.confidence,
             channel: Some(1), // Single channel for audio analysis
+        }
+    }
+}
+
+/// Extended audio event with analysis data for CC generation
+#[derive(Debug, Clone)]
+pub struct ExtendedAudioEvent {
+    pub base_event: AudioEvent,
+    pub pitch_event: PitchEvent,
+}
+
+impl From<PitchEvent> for ExtendedAudioEvent {
+    fn from(pitch_event: PitchEvent) -> Self {
+        let base_event = AudioEvent {
+            line_number: 0,
+            timestamp: pitch_event.time,
+            frequency: if pitch_event.voiced { pitch_event.frequency } else { 0.0 },
+            amplitude: pitch_event.confidence,
+            channel: Some(1),
+        };
+        
+        ExtendedAudioEvent {
+            base_event,
+            pitch_event,
         }
     }
 }
@@ -184,8 +265,7 @@ fn resample_audio(
 }
 
 #[cfg(feature = "audio")]
-/// Analyze audio samples using simple autocorrelation-based pitch detection
-/// Note: This is a simplified implementation. For production use, consider more sophisticated algorithms like PYIN
+/// Analyze audio samples with enhanced spectral and temporal analysis
 fn analyze_with_pyin(
     samples: &[f32],
     config: &AudioAnalysisConfig,
@@ -193,29 +273,74 @@ fn analyze_with_pyin(
     let sample_rate = config.target_sample_rate;
     let duration = samples.len() as f64 / sample_rate as f64;
     
-    // Simple frame-based pitch detection using autocorrelation
+    // Create a mutable copy of samples for potential normalization
+    let mut working_samples = samples.to_vec();
+    
+    // Apply peak normalization if enabled
+    if config.enable_peak_normalization {
+        apply_peak_normalization(&mut working_samples, config.normalization_target);
+    }
+    
+    // Enhanced frame-based analysis with spectral features
     let mut pitch_events = Vec::new();
     let frame_size = config.frame_size;
     let hop_size = config.hop_size;
     
+    // Initialize FFT planner for spectral analysis
+    let mut fft_planner = if config.enable_spectral_analysis {
+        Some(FftPlanner::new())
+    } else {
+        None
+    };
+    
     // Process audio in overlapping frames
-    for frame_start in (0..samples.len()).step_by(hop_size) {
-        if frame_start + frame_size > samples.len() {
+    for frame_start in (0..working_samples.len()).step_by(hop_size) {
+        if frame_start + frame_size > working_samples.len() {
             break;
         }
         
-        let frame = &samples[frame_start..frame_start + frame_size];
+        let frame = &working_samples[frame_start..frame_start + frame_size];
         let time = frame_start as f64 / sample_rate as f64;
         
-        // Simple autocorrelation-based pitch detection
+        // Basic pitch detection using autocorrelation
         let (frequency, confidence) = estimate_pitch_autocorr(frame, sample_rate, config.fmin, config.fmax);
         let voiced = frequency > 0.0 && confidence > config.threshold;
+        
+        // Enhanced spectral analysis using custom functions
+        let (spectral_centroid, spectral_rolloff) = if config.enable_spectral_analysis {
+            if let Some(ref mut planner) = fft_planner {
+                let centroid = calculate_spectral_centroid(frame, sample_rate as f64, planner);
+                let rolloff = calculate_spectral_rolloff(frame, sample_rate as f64, planner, 0.85);
+                (Some(centroid), Some(rolloff))
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+        
+        let zero_crossing_rate = if config.enable_zero_crossing_analysis {
+            Some(calculate_zero_crossing_rate(frame))
+        } else {
+            None
+        };
+        
+        // Calculate harmonicity (pitch clarity) if enabled
+        let harmonicity = if config.enable_harmonicity_analysis && voiced {
+            Some(calculate_harmonicity(frame, frequency, sample_rate as f64))
+        } else {
+            None
+        };
         
         pitch_events.push(PitchEvent {
             time,
             frequency: if voiced { frequency } else { 0.0 },
             confidence,
             voiced,
+            spectral_centroid,
+            harmonicity,
+            spectral_rolloff,
+            zero_crossing_rate,
         });
     }
     
@@ -224,6 +349,160 @@ fn analyze_with_pyin(
         sample_rate,
         duration,
     })
+}
+
+#[cfg(feature = "audio")]
+/// Calculate spectral centroid (brightness measure) using FFT
+fn calculate_spectral_centroid(frame: &[f32], sample_rate: f64, fft_planner: &mut FftPlanner<f32>) -> f64 {
+    if frame.len() < 4 {
+        return 0.0;
+    }
+    
+    // Prepare FFT input
+    let mut buffer: Vec<Complex<f32>> = frame.iter().map(|&x| Complex::new(x, 0.0)).collect();
+    
+    // Ensure power of 2 length for FFT efficiency
+    let fft_size = buffer.len().next_power_of_two();
+    buffer.resize(fft_size, Complex::new(0.0, 0.0));
+    
+    // Perform FFT
+    let fft = fft_planner.plan_fft_forward(fft_size);
+    fft.process(&mut buffer);
+    
+    // Calculate spectral centroid
+    let mut weighted_sum = 0.0;
+    let mut magnitude_sum = 0.0;
+    let bin_width = sample_rate / fft_size as f64;
+    
+    for (i, complex) in buffer.iter().take(fft_size / 2).enumerate() {
+        let magnitude = complex.norm() as f64;
+        let frequency = i as f64 * bin_width;
+        
+        weighted_sum += frequency * magnitude;
+        magnitude_sum += magnitude;
+    }
+    
+    if magnitude_sum > 1e-10 {
+        weighted_sum / magnitude_sum
+    } else {
+        0.0
+    }
+}
+
+#[cfg(feature = "audio")]
+/// Calculate spectral rolloff (frequency below which a percentage of energy is contained)
+fn calculate_spectral_rolloff(frame: &[f32], sample_rate: f64, fft_planner: &mut FftPlanner<f32>, rolloff_percentage: f64) -> f64 {
+    if frame.len() < 4 {
+        return 0.0;
+    }
+    
+    // Prepare FFT input
+    let mut buffer: Vec<Complex<f32>> = frame.iter().map(|&x| Complex::new(x, 0.0)).collect();
+    
+    // Ensure power of 2 length for FFT efficiency
+    let fft_size = buffer.len().next_power_of_two();
+    buffer.resize(fft_size, Complex::new(0.0, 0.0));
+    
+    // Perform FFT
+    let fft = fft_planner.plan_fft_forward(fft_size);
+    fft.process(&mut buffer);
+    
+    // Calculate total energy and find rolloff point
+    let magnitudes: Vec<f64> = buffer.iter().take(fft_size / 2).map(|c| c.norm() as f64).collect();
+    let total_energy: f64 = magnitudes.iter().map(|&m| m * m).sum();
+    let target_energy = total_energy * rolloff_percentage;
+    
+    let mut cumulative_energy = 0.0;
+    let bin_width = sample_rate / fft_size as f64;
+    
+    for (i, &magnitude) in magnitudes.iter().enumerate() {
+        cumulative_energy += magnitude * magnitude;
+        if cumulative_energy >= target_energy {
+            return i as f64 * bin_width;
+        }
+    }
+    
+    // If we haven't found the rolloff point, return the Nyquist frequency
+    sample_rate / 2.0
+}
+
+#[cfg(feature = "audio")]
+/// Calculate zero crossing rate (measure of noisiness)
+fn calculate_zero_crossing_rate(frame: &[f32]) -> f64 {
+    if frame.len() < 2 {
+        return 0.0;
+    }
+    
+    let mut crossings = 0;
+    for i in 1..frame.len() {
+        if (frame[i] >= 0.0) != (frame[i - 1] >= 0.0) {
+            crossings += 1;
+        }
+    }
+    
+    crossings as f64 / (frame.len() - 1) as f64
+}
+
+#[cfg(feature = "audio")]
+/// Apply peak normalization to audio samples
+/// 
+/// This function normalizes the audio to a target peak level to ensure
+/// consistent signal levels for analysis, improving pitch detection accuracy
+/// and spectral analysis reliability.
+fn apply_peak_normalization(samples: &mut [f32], target_level: f32) {
+    if samples.is_empty() || target_level <= 0.0 || target_level > 1.0 {
+        return;
+    }
+    
+    // Find the peak absolute value in the audio
+    let peak = samples.iter()
+        .map(|&sample| sample.abs())
+        .fold(0.0f32, |max_val, sample| max_val.max(sample));
+    
+    // Avoid division by zero and don't amplify if peak is already very small
+    if peak > 1e-6 {
+        let gain = target_level / peak;
+        
+        // Apply the gain to all samples
+        for sample in samples.iter_mut() {
+            *sample *= gain;
+        }
+    }
+}
+
+#[cfg(feature = "audio")]
+/// Calculate harmonicity (pitch clarity measure) based on harmonic-to-noise ratio
+fn calculate_harmonicity(frame: &[f32], fundamental_freq: f64, sample_rate: f64) -> f64 {
+    if fundamental_freq <= 0.0 || frame.len() < 64 {
+        return 0.0;
+    }
+    
+    // Simple harmonicity measure based on autocorrelation strength
+    let period_samples = (sample_rate / fundamental_freq) as usize;
+    if period_samples >= frame.len() / 2 {
+        return 0.0;
+    }
+    
+    // Calculate normalized autocorrelation at the fundamental period
+    let mut correlation = 0.0;
+    let mut energy1 = 0.0;
+    let mut energy2 = 0.0;
+    
+    let len = frame.len() - period_samples;
+    for i in 0..len {
+        let x1 = frame[i] as f64;
+        let x2 = frame[i + period_samples] as f64;
+        correlation += x1 * x2;
+        energy1 += x1 * x1;
+        energy2 += x2 * x2;
+    }
+    
+    let norm = (energy1 * energy2).sqrt();
+    if norm > 1e-10 {
+        (correlation / norm).max(0.0).min(1.0)
+    } else {
+        0.0
+    }
 }
 
 #[cfg(feature = "audio")]
@@ -300,7 +579,7 @@ pub fn analyze_audio_file<P: AsRef<Path>>(
     ))
 }
 
-/// Convert audio analysis results to AudioEvent format for MIDI conversion
+/// Convert audio analysis results to AudioEvent format for MIDI conversion (note-level)
 pub fn pitch_analysis_to_audio_events(
     analysis: &PitchAnalysisResult,
     min_note_duration: f64,
@@ -400,7 +679,17 @@ pub fn pitch_analysis_to_audio_events(
     audio_events
 }
 
-/// Convert audio file directly to MIDI using PYIN analysis
+/// Build extended events per analysis frame for CC generation
+pub fn build_extended_events_from_analysis(analysis: &PitchAnalysisResult) -> Vec<ExtendedAudioEvent> {
+    let mut events = Vec::new();
+    for p in &analysis.pitch_events {
+        let ee: ExtendedAudioEvent = p.clone().into();
+        events.push(ee);
+    }
+    events
+}
+
+/// Convert audio file directly to MIDI using analysis
 pub fn convert_audio_to_midi<P: AsRef<Path>>(
     file_path: P,
     audio_config: &AudioAnalysisConfig,
@@ -409,18 +698,129 @@ pub fn convert_audio_to_midi<P: AsRef<Path>>(
     // Analyze audio file
     let analysis = analyze_audio_file(file_path, audio_config)?;
     
-    // Convert to audio events with minimum note duration based on hop size
-    let min_note_duration = (audio_config.hop_size as f64 * 2.0) / audio_config.target_sample_rate as f64;
-    let audio_events = pitch_analysis_to_audio_events(&analysis, min_note_duration);
+    // Build extended events per analysis frame for rich CC data
+    let extended_events = build_extended_events_from_analysis(&analysis);
     
-    // Convert to MIDI with CC for pitch contour (CC100) and amplitude (CC101)
-    let collection = crate::midi::convert_to_midi_events_with_cc(&audio_events, midi_config)?;
+    // Convert to MIDI with configurable CC mapping
+    let collection = crate::midi::convert_extended_audio_to_midi(&extended_events, &audio_config.cc_mapping, midi_config)?;
     crate::midi::generate_midi_file_with_cc(collection, midi_config)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_basic() {
+        let mut samples = vec![0.1, -0.2, 0.5, -0.8, 0.3];
+        let target_level = 0.95;
+        
+        apply_peak_normalization(&mut samples, target_level);
+        
+        // The peak should now be approximately 0.95 (from original 0.8)
+        let actual_peak = samples.iter().map(|&s| s.abs()).fold(0.0f32, |max, val| max.max(val));
+        assert!((actual_peak - target_level).abs() < 0.001);
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_zero_signal() {
+        let mut samples = vec![0.0, 0.0, 0.0, 0.0];
+        let original = samples.clone();
+        
+        apply_peak_normalization(&mut samples, 0.95);
+        
+        // Zero signal should remain unchanged
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_small_signal() {
+        let mut samples = vec![1e-8, -1e-8, 5e-9];
+        let original = samples.clone();
+        
+        apply_peak_normalization(&mut samples, 0.95);
+        
+        // Very small signals below threshold should remain unchanged
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_empty_array() {
+        let mut samples: Vec<f32> = vec![];
+        
+        // Should not panic on empty array
+        apply_peak_normalization(&mut samples, 0.95);
+        assert!(samples.is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_invalid_target() {
+        let mut samples = vec![0.1, -0.2, 0.5];
+        let original = samples.clone();
+        
+        // Invalid target levels should leave samples unchanged
+        apply_peak_normalization(&mut samples, 0.0);
+        assert_eq!(samples, original);
+        
+        apply_peak_normalization(&mut samples, -0.5);
+        assert_eq!(samples, original);
+        
+        apply_peak_normalization(&mut samples, 1.5);
+        assert_eq!(samples, original);
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_preserves_waveform_shape() {
+        let mut samples = vec![0.1, -0.4, 0.2, -0.8, 0.6];
+        let original_ratios: Vec<f32> = samples.windows(2)
+            .map(|w| w[1] / w[0])
+            .collect();
+        
+        apply_peak_normalization(&mut samples, 0.9);
+        
+        // Check that the relative ratios between samples are preserved
+        let normalized_ratios: Vec<f32> = samples.windows(2)
+            .map(|w| w[1] / w[0])
+            .collect();
+        
+        for (orig, norm) in original_ratios.iter().zip(normalized_ratios.iter()) {
+            assert!((orig - norm).abs() < 0.001, "Waveform shape not preserved");
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_audio_config_normalization_defaults() {
+        let config = AudioAnalysisConfig::default();
+        
+        assert!(config.enable_peak_normalization);
+        assert_eq!(config.normalization_target, 0.95);
+    }
+
+    #[test]
+    #[cfg(feature = "audio")]
+    fn test_peak_normalization_integration() {
+        // Test that normalization is properly integrated into the analysis pipeline
+        let samples = vec![0.1; 1024]; // Simple constant signal
+        let mut config = AudioAnalysisConfig::default();
+        config.enable_peak_normalization = true;
+        config.normalization_target = 0.8;
+        
+        // The function should run without panicking when normalization is enabled
+        let result = analyze_with_pyin(&samples, &config);
+        assert!(result.is_ok());
+        
+        // Disable normalization and ensure it still works
+        config.enable_peak_normalization = false;
+        let result2 = analyze_with_pyin(&samples, &config);
+        assert!(result2.is_ok());
+    }
     
     #[test]
     fn test_audio_analysis_config_defaults() {
@@ -440,6 +840,10 @@ mod tests {
             frequency: 440.0,
             confidence: 0.8,
             voiced: true,
+            spectral_centroid: Some(1500.0),
+            harmonicity: Some(0.7),
+            spectral_rolloff: Some(3000.0),
+            zero_crossing_rate: Some(0.2),
         };
         
         let audio_event: AudioEvent = pitch_event.into();

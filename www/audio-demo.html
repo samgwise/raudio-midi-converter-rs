@@ -183,6 +183,19 @@
             color: #0d47a1;
             display: none;
         }
+        input[type="checkbox"] {
+            margin-right: 8px;
+        }
+        small {
+            display: block;
+            color: #888;
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        .form-group small {
+            color: #666;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
@@ -266,11 +279,70 @@
                     </div>
                 </div>
                 
+                <div class="form-group" style="margin-top: 20px;">
+                    <label>Advanced Analysis Options:</label>
+                    <div class="audio-config-grid" style="grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label><input type="checkbox" id="enable-spectral" checked> Spectral Analysis</label>
+                            <small>Brightness, rolloff frequency</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" id="enable-harmonicity" checked> Harmonicity Analysis</label>
+                            <small>Pitch clarity measure</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" id="enable-zero-crossing" checked> Zero Crossing Rate</label>
+                            <small>Noisiness measure</small>
+                        </div>
+                        <div>
+                            <label><input type="checkbox" id="enable-peak-normalization" checked> Peak Normalization</label>
+                            <small>Normalize audio level</small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-group" style="margin-top: 20px;">
+                    <label>MIDI Controller (CC) Assignments:</label>
+                    <div class="audio-config-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label for="cc-pitch-contour">Pitch Contour CC:</label>
+                            <input type="number" id="cc-pitch-contour" value="100" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-amplitude">Amplitude CC:</label>
+                            <input type="number" id="cc-amplitude" value="101" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-spectral-centroid">Spectral Centroid CC:</label>
+                            <input type="number" id="cc-spectral-centroid" value="102" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-harmonicity">Harmonicity CC:</label>
+                            <input type="number" id="cc-harmonicity" value="103" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-spectral-rolloff">Spectral Rolloff CC:</label>
+                            <input type="number" id="cc-spectral-rolloff" value="104" min="1" max="127">
+                        </div>
+                        <div>
+                            <label for="cc-zero-crossing">Zero Crossing CC:</label>
+                            <input type="number" id="cc-zero-crossing" value="105" min="1" max="127">
+                        </div>
+                    </div>
+                    <small style="display: block; margin-top: 10px; color: #666;">
+                        <em>Set to 0 to disable a specific CC channel. Valid range: 1-127.</em>
+                    </small>
+                </div>
+                
                 <div class="audio-info" style="margin-top: 15px;">
                     <h4>📊 MIDI Controller Data</h4>
                     <p><strong>CC 100 - Pitch Contour:</strong> Fine pitch variations and microtonal details<br>
-                    <strong>CC 101 - Amplitude:</strong> Real-time volume/loudness changes</p>
-                    <p><em>These CC events provide detailed expression data that goes beyond basic note on/off.</em></p>
+                    <strong>CC 101 - Amplitude:</strong> Real-time volume/loudness changes<br>
+                    <strong>CC 102 - Spectral Centroid:</strong> Brightness/timbre measure<br>
+                    <strong>CC 103 - Harmonicity:</strong> Pitch clarity (harmonic vs noise)<br>
+                    <strong>CC 104 - Spectral Rolloff:</strong> High-frequency energy distribution<br>
+                    <strong>CC 105 - Zero Crossing Rate:</strong> Measure of noisiness/texture</p>
+                    <p><em>Advanced CC events provide detailed spectral expression data beyond basic pitch and amplitude.</em></p>
                 </div>
             </div>
         </div>
@@ -313,8 +385,10 @@
             process_audio_to_midi,
             WasmConversionConfig,
             WasmAudioConfig,
+            WasmCCMapping,
             create_default_config,
             create_default_audio_config,
+            create_default_cc_mapping,
             get_version,
             init_panic_hook
         } from './pkg/csv_to_midi_wasm.js';
@@ -505,14 +579,40 @@
                     // Get audio samples (mix down to mono if stereo)
                     const samples = audioBuffer.getChannelData(0);
                     
-                    // Get configuration values
+                    // Get advanced analysis options
+                    const enableSpectral = document.getElementById('enable-spectral').checked;
+                    const enableHarmonicity = document.getElementById('enable-harmonicity').checked;
+                    const enableZeroCrossing = document.getElementById('enable-zero-crossing').checked;
+                    const enablePeakNorm = document.getElementById('enable-peak-normalization').checked;
+                    
+                    // Get CC assignments (convert 0 to null for disabled channels)
+                    const getCCValue = (id) => {
+                        const value = parseInt(document.getElementById(id).value);
+                        return (value > 0 && value <= 127) ? value : null;
+                    };
+                    
+                    const ccMapping = new WasmCCMapping(
+                        getCCValue('cc-pitch-contour'),
+                        getCCValue('cc-amplitude'),
+                        enableSpectral ? getCCValue('cc-spectral-centroid') : null,
+                        enableHarmonicity ? getCCValue('cc-harmonicity') : null,
+                        enableSpectral ? getCCValue('cc-spectral-rolloff') : null,
+                        enableZeroCrossing ? getCCValue('cc-zero-crossing') : null
+                    );
+                    
+                    // Get enhanced audio configuration
                     const audioConfig = new WasmAudioConfig(
                         audioBuffer.sampleRate,
                         parseInt(document.getElementById('frame-size').value),
                         parseInt(document.getElementById('hop-size').value),
                         parseFloat(document.getElementById('min-freq').value),
                         parseFloat(document.getElementById('max-freq').value),
-                        parseFloat(document.getElementById('threshold').value)
+                        parseFloat(document.getElementById('threshold').value),
+                        enableSpectral,
+                        enableHarmonicity,
+                        enableZeroCrossing,
+                        enablePeakNorm,
+                        0.95 // normalization target
                     );
                     
                     const midiConfig = new WasmConversionConfig(
@@ -522,8 +622,8 @@
                         parseInt(document.getElementById('octave').value)
                     );
                     
-                    // Process audio and convert to MIDI
-                    midiArray = process_audio_to_midi(samples, audioConfig, midiConfig);
+                    // Process audio and convert to MIDI with enhanced analysis
+                    midiArray = process_audio_to_midi(samples, audioConfig, ccMapping, midiConfig);
                     
                     statusDiv.style.display = 'none';
                 }
@@ -536,7 +636,30 @@
                 
                 let ccInfo = '';
                 if (currentMode === 'audio') {
-                    ccInfo = '<br><strong>Includes CC Data:</strong> CC100 (Pitch Contour), CC101 (Amplitude)';
+                    // Generate dynamic CC information based on enabled features and assignments
+                    const ccList = [];
+                    const getCCValue = (id) => {
+                        const value = parseInt(document.getElementById(id).value);
+                        return (value > 0 && value <= 127) ? value : null;
+                    };
+                    
+                    const pitchCC = getCCValue('cc-pitch-contour');
+                    const ampCC = getCCValue('cc-amplitude');
+                    const centroidCC = document.getElementById('enable-spectral').checked ? getCCValue('cc-spectral-centroid') : null;
+                    const harmonicityCC = document.getElementById('enable-harmonicity').checked ? getCCValue('cc-harmonicity') : null;
+                    const rolloffCC = document.getElementById('enable-spectral').checked ? getCCValue('cc-spectral-rolloff') : null;
+                    const zcrCC = document.getElementById('enable-zero-crossing').checked ? getCCValue('cc-zero-crossing') : null;
+                    
+                    if (pitchCC) ccList.push(`CC${pitchCC} (Pitch Contour)`);
+                    if (ampCC) ccList.push(`CC${ampCC} (Amplitude)`);
+                    if (centroidCC) ccList.push(`CC${centroidCC} (Spectral Centroid)`);
+                    if (harmonicityCC) ccList.push(`CC${harmonicityCC} (Harmonicity)`);
+                    if (rolloffCC) ccList.push(`CC${rolloffCC} (Spectral Rolloff)`);
+                    if (zcrCC) ccList.push(`CC${zcrCC} (Zero Crossing Rate)`);
+                    
+                    if (ccList.length > 0) {
+                        ccInfo = '<br><strong>Includes CC Data:</strong> ' + ccList.join(', ');
+                    }
                 }
                 
                 showResult(`

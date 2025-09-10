@@ -11,7 +11,7 @@ description = "WebAssembly bindings for converting CSV audio analysis data to MI
 crate-type = ["cdylib"]
 
 [dependencies]
-csv-to-midi-core = { path = "../csv-to-midi-core" }
+csv-to-midi-core = { path = "../csv-to-midi-core", features = ["audio"] }
 wasm-bindgen = "0.2"
 js-sys = "0.3"
 console_error_panic_hook = "0.1"
@@ -25,5 +25,6 @@ web-sys = { version = "0.3", features = [
 ] }
 
 [features]
-default = ["wee_alloc"]
+default = ["wee_alloc", "audio"]
 wee_alloc = ["dep:wee_alloc"]
+audio = ["csv-to-midi-core/audio"]

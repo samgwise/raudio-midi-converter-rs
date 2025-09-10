@@ -4,6 +4,8 @@
 //! and generating the final MIDI file format.
 
 use crate::{parser::AudioEvent, ConversionConfig, Result};
+#[cfg(feature = "audio")]
+use crate::audio::{CCMappingConfig, ExtendedAudioEvent};
 use midly::{Format, Header, MidiMessage, Timing, Track, TrackEvent, TrackEventKind};
 use std::collections::HashMap;
 
@@ -98,6 +100,170 @@ pub fn amplitude_to_cc_value(amplitude: f64) -> u8 {
     cc_value.clamp(0.0, 127.0) as u8
 }
 
+/// Convert spectral feature to CC value (0-127)
+#[cfg(feature = "audio")]
+fn spectral_to_cc_value(value: f64, min_val: f64, max_val: f64) -> u8 {
+    if min_val >= max_val {
+        return 64; // Center value if invalid range
+    }
+    
+    let normalized = (value - min_val) / (max_val - min_val);
+    let cc_value = (normalized * 127.0).round();
+    cc_value.clamp(0.0, 127.0) as u8
+}
+
+/// Add CC events for silence periods
+#[cfg(feature = "audio")]
+fn add_cc_events_for_silence(
+    cc_events: &mut Vec<MidiCCEvent>,
+    channel: u8,
+    tick: u32,
+    cc_mapping: &CCMappingConfig,
+) {
+    if let Some(cc) = cc_mapping.pitch_contour_cc {
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: 64, // Center value (no pitch bend)
+            tick,
+        });
+    }
+    
+    if let Some(cc) = cc_mapping.amplitude_cc {
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: 0, // Silence
+            tick,
+        });
+    }
+    
+    // Reset other CCs to center/zero values during silence
+    if let Some(cc) = cc_mapping.spectral_centroid_cc {
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: 0,
+            tick,
+        });
+    }
+    
+    if let Some(cc) = cc_mapping.harmonicity_cc {
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: 0,
+            tick,
+        });
+    }
+    
+    if let Some(cc) = cc_mapping.spectral_rolloff_cc {
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: 0,
+            tick,
+        });
+    }
+    
+    if let Some(cc) = cc_mapping.zero_crossing_rate_cc {
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: 0,
+            tick,
+        });
+    }
+}
+
+/// Add CC events for a single frame
+#[cfg(feature = "audio")]
+fn add_cc_events_for_frame(
+    cc_events: &mut Vec<MidiCCEvent>,
+    channel: u8,
+    tick: u32,
+    audio_event: &AudioEvent,
+    pitch_event: &crate::audio::PitchEvent,
+    cc_mapping: &CCMappingConfig,
+) {
+    // Pitch contour CC
+    if let Some(cc) = cc_mapping.pitch_contour_cc {
+        let pitch_contour_cc = frequency_to_pitch_contour_cc(audio_event.frequency);
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: pitch_contour_cc,
+            tick,
+        });
+    }
+    
+    // Amplitude CC
+    if let Some(cc) = cc_mapping.amplitude_cc {
+        let amplitude_cc = amplitude_to_cc_value(audio_event.amplitude);
+        cc_events.push(MidiCCEvent {
+            channel,
+            controller: cc,
+            value: amplitude_cc,
+            tick,
+        });
+    }
+    
+    // Spectral centroid CC (brightness)
+    if let Some(cc) = cc_mapping.spectral_centroid_cc {
+        if let Some(centroid) = pitch_event.spectral_centroid {
+            // Map typical range 0-8000 Hz to 0-127
+            let centroid_cc = spectral_to_cc_value(centroid, 0.0, 8000.0);
+            cc_events.push(MidiCCEvent {
+                channel,
+                controller: cc,
+                value: centroid_cc,
+                tick,
+            });
+        }
+    }
+    
+    // Harmonicity CC (pitch clarity)
+    if let Some(cc) = cc_mapping.harmonicity_cc {
+        if let Some(harmonicity) = pitch_event.harmonicity {
+            let harmonicity_cc = (harmonicity * 127.0).round().clamp(0.0, 127.0) as u8;
+            cc_events.push(MidiCCEvent {
+                channel,
+                controller: cc,
+                value: harmonicity_cc,
+                tick,
+            });
+        }
+    }
+    
+    // Spectral rolloff CC
+    if let Some(cc) = cc_mapping.spectral_rolloff_cc {
+        if let Some(rolloff) = pitch_event.spectral_rolloff {
+            // Map typical range 0-10000 Hz to 0-127
+            let rolloff_cc = spectral_to_cc_value(rolloff, 0.0, 10000.0);
+            cc_events.push(MidiCCEvent {
+                channel,
+                controller: cc,
+                value: rolloff_cc,
+                tick,
+            });
+        }
+    }
+    
+    // Zero crossing rate CC (noisiness)
+    if let Some(cc) = cc_mapping.zero_crossing_rate_cc {
+        if let Some(zcr) = pitch_event.zero_crossing_rate {
+            // Map typical range 0-1.0 to 0-127
+            let zcr_cc = (zcr * 127.0).round().clamp(0.0, 127.0) as u8;
+            cc_events.push(MidiCCEvent {
+                channel,
+                controller: cc,
+                value: zcr_cc,
+                tick,
+            });
+        }
+    }
+}
+
 /// Convert audio events to MIDI note events
 pub fn convert_to_midi_events(
     audio_events: &[AudioEvent],
@@ -105,6 +271,98 @@ pub fn convert_to_midi_events(
 ) -> Result<Vec<MidiNoteEvent>> {
     let collection = convert_to_midi_events_with_cc(audio_events, config)?;
     Ok(collection.note_events)
+}
+
+/// Convert extended audio events to MIDI events with configurable CC mapping
+#[cfg(feature = "audio")]
+pub fn convert_extended_audio_to_midi(
+    extended_events: &[ExtendedAudioEvent],
+    cc_mapping: &CCMappingConfig,
+    config: &ConversionConfig,
+) -> Result<MidiEventCollection> {
+    let mut note_events = Vec::new();
+    let mut cc_events = Vec::new();
+    let mut active_notes: HashMap<(u8, u8), (u32, u8)> = HashMap::new();
+    
+    for extended_event in extended_events {
+        let event = &extended_event.base_event;
+        let pitch_event = &extended_event.pitch_event;
+        let tick = seconds_to_ticks(event.timestamp, config.ticks_per_quarter);
+        let channel = event.channel.unwrap_or(1) - 1; // Convert to 0-based channel
+        
+        if event.is_silence() {
+            // End all active notes when we hit silence
+            for ((channel, note), (start_tick, velocity)) in active_notes.drain() {
+                let duration = tick.saturating_sub(start_tick).max(config.min_note_duration);
+                
+                note_events.push(MidiNoteEvent {
+                    channel,
+                    note,
+                    velocity,
+                    start_tick,
+                    duration_ticks: duration,
+                });
+            }
+            
+            // Add CC events for silence (reset values)
+            add_cc_events_for_silence(&mut cc_events, channel, tick, cc_mapping);
+            continue;
+        }
+        
+        let midi_note = frequency_to_midi_note(event.frequency);
+        if midi_note == 0 {
+            continue; // Skip invalid frequencies
+        }
+        
+        let velocity = amplitude_to_velocity(event.amplitude, config.default_velocity);
+        
+        // Generate CC events based on configuration
+        add_cc_events_for_frame(&mut cc_events, channel, tick, event, pitch_event, cc_mapping);
+        
+        let key = (channel, midi_note);
+        
+        // If this note is already playing, end the previous instance
+        if let Some((start_tick, prev_velocity)) = active_notes.remove(&key) {
+            let duration = tick.saturating_sub(start_tick).max(config.min_note_duration);
+            
+            note_events.push(MidiNoteEvent {
+                channel,
+                note: midi_note,
+                velocity: prev_velocity,
+                start_tick,
+                duration_ticks: duration,
+            });
+        }
+        
+        // Start the new note
+        active_notes.insert(key, (tick, velocity));
+    }
+    
+    // End any remaining active notes
+    if let Some(last_extended) = extended_events.last() {
+        let end_tick = seconds_to_ticks(last_extended.base_event.timestamp + 1.0, config.ticks_per_quarter);
+        
+        for ((channel, note), (start_tick, velocity)) in active_notes.drain() {
+            let duration = end_tick.saturating_sub(start_tick).max(config.min_note_duration);
+            
+            note_events.push(MidiNoteEvent {
+                channel,
+                note,
+                velocity,
+                start_tick,
+                duration_ticks: duration,
+            });
+        }
+    }
+    
+    // Sort events by time
+    note_events.sort_by_key(|event| event.start_tick);
+    cc_events.sort_by_key(|event| event.tick);
+    
+    Ok(MidiEventCollection {
+        note_events,
+        cc_events,
+    })
 }
 
 /// Convert audio events to MIDI events including notes and CC data

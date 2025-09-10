@@ -2,7 +2,7 @@ use clap::{Arg, Command};
 use csv_to_midi_core::{convert_csv_to_midi, ConversionConfig};
 
 #[cfg(feature = "audio")]
-use csv_to_midi_core::{convert_audio_to_midi, AudioAnalysisConfig};
+use csv_to_midi_core::{convert_audio_to_midi, AudioAnalysisConfig, CCMappingConfig};
 use std::fs;
 use std::path::Path;
 
@@ -239,7 +239,7 @@ fn main() -> anyhow::Result<()> {
             println!("MIDI settings: {} ticks/quarter, velocity {}, min duration {}", 
                      ticks_per_quarter, default_velocity, min_note_duration);
 
-            // Create audio analysis configuration
+            // Create audio analysis configuration with default CC mapping and enhanced analysis enabled
             let audio_config = AudioAnalysisConfig {
                 target_sample_rate: 44100,
                 frame_size,
@@ -247,6 +247,12 @@ fn main() -> anyhow::Result<()> {
                 fmin,
                 fmax,
                 threshold,
+                cc_mapping: CCMappingConfig::default(),
+                enable_spectral_analysis: true,
+                enable_harmonicity_analysis: true,
+                enable_zero_crossing_analysis: true,
+                enable_peak_normalization: true,
+                normalization_target: 0.95,
             };
 
             // Convert audio to MIDI
