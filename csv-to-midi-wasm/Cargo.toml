@@ -1,0 +1,28 @@
+[package]
+name = "csv-to-midi-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebAssembly bindings for converting CSV audio analysis data to MIDI files"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+csv-to-midi-core = { path = "../csv-to-midi-core" }
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+wee_alloc = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = [
+  "console",
+  "File",
+  "FileReader",
+  "Blob",
+] }
+
+[features]
+default = ["wee_alloc"]
+wee_alloc = ["dep:wee_alloc"]

@@ -1,0 +1,17 @@
+[package]
+name = "csv-to-midi-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Command-line interface for converting CSV audio analysis data to MIDI files"
+
+[[bin]]
+name = "csv-to-midi"
+path = "src/main.rs"
+
+[dependencies]
+csv-to-midi-core = { path = "../csv-to-midi-core" }
+clap = { version = "4.4", features = ["derive"] }
+anyhow = "1.0"
