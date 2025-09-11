@@ -27,8 +27,8 @@ This directory contains the web-based interface for the CSV to MIDI converter.
 - Browser-based pitch detection using autocorrelation
 - Direct conversion from audio to MIDI
 - **Enhanced MIDI output with CC data:**
-  - **CC 100**: Pitch contour (fine pitch variations)
-  - **CC 101**: Amplitude (real-time volume changes)
+- **CC 104**: Pitch contour (fine pitch variations)
+  - **CC 105**: Amplitude (real-time volume changes)
 
 ## Usage
 
